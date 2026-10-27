@@ -1,0 +1,48 @@
+# Build AKWeb Browser (debug) — pola yang sama dengan proyek lama 8bp-apk.
+# STATUS PUSH (2026-10-27): user SUDAH SETUJU memakai repo private
+# NandSki/8bp-apk untuk build ini dan minta cepat. Workflow ini SIAP PUSH,
+# tapi push/build TIDAK dilakukan oleh subagent pembuat proyek — parent
+# me-review dulu, lalu push dan menjalankan workflow_dispatch sendiri
+# (lihat STATUS.md, bagian "Cara push cepat"). Dijalankan manual dari
+# tab Actions (workflow_dispatch) setelah versi GeckoView di
+# app/build.gradle dikonfirmasi ke artefak yang terbit.
+#
+# Konfigurasi proyek: AGP 8.2.2, Gradle 8.5, Java 17, compileSdk/targetSdk 34.
+# Perbedaan dari proyek lama: dependensi GeckoView (org.mozilla.geckoview)
+# dan android.useAndroidX=true (lihat gradle.properties).
+name: Build AKWeb Browser (debug)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install SDK packages (android-34)
+        run: |
+          SDKMGR="$(command -v sdkmanager || echo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager")"
+          echo "sdkmanager: $SDKMGR (ANDROID_HOME=$ANDROID_HOME)"
+          yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          "$SDKMGR" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Build debug APK + unit test
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: "8.5"
+          arguments: :app:assembleDebug :app:testDebugUnitTest
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
