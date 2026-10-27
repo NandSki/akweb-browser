@@ -52,8 +52,7 @@ class AkwebExtensionDelegate(
             }
         })
     }
-
-    override fun onDisconnect(port: WebExtension.Port) {
-        DebugLog.append("NATIVE: delegate disconnect (port ditutup)")
-    }
+    // Catatan 2026-10-27: onDisconnect di level MessageDelegate DIHAPUS
+    // (tersangka gagal compile 'overrides nothing' di GeckoView 157:
+    // onDisconnect hanya milik PortDelegate, yang sudah ada di atas).
 }
