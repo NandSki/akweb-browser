@@ -1,0 +1,39 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+android {
+    namespace = "com.akweb.browser"
+    compileSdk = 34
+    defaultConfig {
+        applicationId = "com.akweb.browser"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        // 0.1.0-review: proyek siap review, BUKAN rilis. Belum pernah di-build.
+        versionName = "0.1.0-review"
+    }
+    buildTypes {
+        release {
+            // Groovy DSL: minifyEnabled, bukan isMinifyEnabled (Kotlin DSL).
+            minifyEnabled = false
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+dependencies {
+    // GeckoView: mesin browser yang dipakai AKWeb asli.
+    // Terverifikasi 2026-10-27 ke maven.mozilla.org: versi terbit 157
+    // adalah 157.0.20261005135250 (bukan "157.0" polos), dan itu
+    // memenuhi strict_min_version 157.0 di manifest ekstensi.
+    implementation("org.mozilla.geckoview:geckoview:157.0.20261005135250")
+    testImplementation("junit:junit:4.13.2")
+}
