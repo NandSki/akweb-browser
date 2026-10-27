@@ -1,6 +1,10 @@
-// Template build diambil dari proyek lama ~/workspace/work/8bp-apk/:
-// AGP 8.2.2, Kotlin 1.9.24, Gradle 8.5, Java 17, SDK 34.
+// AGP 9.1.1, Gradle 9.3.1, Java 17, compileSdk 37.
+// Alasan upgrade (log run 40514634759): GeckoView 157 menuntut
+// compileSdk minimal 37 dan AGP minimal 9.1.0, sedangkan proyek
+// lama memakai AGP 8.2.2 / SDK 34 sehingga checkDebugAarMetadata
+// gagal dengan 11 issue. AGP 9+ memakai Kotlin bawaan, jadi plugin
+// org.jetbrains.kotlin.android TIDAK lagi diterapkan (akan gagal
+// build kalau diterapkan).
 plugins {
-    id("com.android.application") version "8.2.2" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+    id("com.android.application") version "9.1.1" apply false
 }
