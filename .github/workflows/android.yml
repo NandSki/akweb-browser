@@ -34,7 +34,7 @@ jobs:
           SDKMGR="$(command -v sdkmanager || echo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager")"
           echo "sdkmanager: $SDKMGR (ANDROID_HOME=$ANDROID_HOME)"
           yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
-          "$SDKMGR" "platform-tools" "platforms;android-37" "build-tools;36.0.0"
+          "$SDKMGR" "platform-tools" "platforms;android-37.0" "build-tools;36.0.0"
 
       - name: Build debug APK + unit test
         uses: gradle/gradle-build-action@v3
