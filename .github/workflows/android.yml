@@ -7,7 +7,8 @@
 # tab Actions (workflow_dispatch) setelah versi GeckoView di
 # app/build.gradle dikonfirmasi ke artefak yang terbit.
 #
-# Konfigurasi proyek: AGP 8.2.2, Gradle 8.5, Java 17, compileSdk/targetSdk 34.
+# Konfigurasi proyek setelah fix 2026-10-27: AGP 9.1.1, Gradle 9.3.1,
+# Java 17, compileSdk 37 (GeckoView 157 menuntutnya), targetSdk 34.
 # Perbedaan dari proyek lama: dependensi GeckoView (org.mozilla.geckoview)
 # dan android.useAndroidX=true (lihat gradle.properties).
 name: Build AKWeb Browser (debug)
@@ -28,17 +29,17 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install SDK packages (android-34)
+      - name: Install SDK packages (android-37)
         run: |
           SDKMGR="$(command -v sdkmanager || echo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager")"
           echo "sdkmanager: $SDKMGR (ANDROID_HOME=$ANDROID_HOME)"
           yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
-          "$SDKMGR" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          "$SDKMGR" "platform-tools" "platforms;android-37" "build-tools;36.0.0"
 
       - name: Build debug APK + unit test
         uses: gradle/gradle-build-action@v3
         with:
-          gradle-version: "8.5"
+          gradle-version: "9.3.1"
           arguments: :app:assembleDebug :app:testDebugUnitTest
 
       - name: Upload APK
