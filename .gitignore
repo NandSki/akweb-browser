@@ -1,0 +1,8 @@
+.gradle/
+build/
+app/build/
+local.properties
+*.apk
+# Jangan pernah commit APK AKWeb asli, libakweb.so, atau dex asli ke repo ini.
+*.so
+*.dex
