@@ -35,3 +35,17 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.10")
     testImplementation("junit:junit:4.13.2")
 }
+
+// Fix 2026-10-28: kompilator Kotlin bawaan AGP 9.1 (2.2.0) tidak
+// bisa membaca kotlin-stdlib 2.4.20 yang ditarik transitif (metadata
+// 2.4.0, kompilator hanya baca sampai 2.3.0) sehingga
+// compileDebugKotlin gagal. Paksa semua modul stdlib ke 2.2.10.
+configurations.all {
+    resolutionStrategy {
+        force("org.jetbrains.kotlin:kotlin-stdlib:2.2.10")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.2.10")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.10")
+        force("org.jetbrains.kotlin:kotlin-reflect:2.2.10")
+        force("org.jetbrains.kotlin:kotlin-annotations:2.2.10")
+    }
+}
