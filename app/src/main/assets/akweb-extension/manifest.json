@@ -1,0 +1,75 @@
+{
+    "manifest_version": 2,
+    "name": "AKWeb Android Bridge",
+    "version": "100.54611.63313.53404",
+    "description": "Built-in GeckoView frame and native bridge.",
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "akweb-android-bridge@example.invalid",
+            "strict_min_version": "157.0",
+            "data_collection_permissions": {
+                "required": [
+                    "none"
+                ]
+            }
+        }
+    },
+    "permissions": [
+        "nativeMessaging",
+        "nativeMessagingFromContent",
+        "geckoViewAddons",
+        "storage",
+        "https://prod-web-pool.miniclip.com/*",
+        "https://8ballpool.com/*",
+        "https://www.8ballpool.com/*"
+    ],
+    "web_accessible_resources": [
+        "ui/assets/line_auto_play.png",
+        "ui/assets/line_auto_pause.png",
+        "ui/assets/line_autoqueue_play.png",
+        "ui/assets/line_autoqueue_pause.png",
+        "ui/assets/line_float_ball_on.webp"
+    ],
+    "background": {
+        "scripts": [
+            "generated-contract.js",
+            "ui/ak-control-router.js"
+        ],
+        "persistent": true
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://8ballpool.com/*",
+                "https://www.8ballpool.com/*"
+            ],
+            "js": [
+                "generated-contract.js",
+                "generated-ui-style.js",
+                "ui/ak-settings-client.js",
+                "ui/ak-settings-panel.js",
+                "ui/ak-floating-controls.js",
+                "ui/ak-overlay-root.js",
+                "ui/ak-top-control-host.js"
+            ],
+            "all_frames": false,
+            "match_about_blank": false,
+            "run_at": "document_start"
+        },
+        {
+            "matches": [
+                "https://prod-web-pool.miniclip.com/*"
+            ],
+            "js": [
+                "generated-contract.js",
+                "readonly-game-snapshot.js",
+                "ui/ak-shot-tracker.js",
+                "ui/ak-line-preview-renderer.js",
+                "isolated-bridge.js"
+            ],
+            "all_frames": true,
+            "match_about_blank": false,
+            "run_at": "document_start"
+        }
+    ]
+}
