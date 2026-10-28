@@ -1,7 +1,7 @@
 {
     "manifest_version": 2,
     "name": "AKWeb Android Bridge",
-    "version": "100.54611.63313.53404",
+    "version": "103.64886.18343.64210",
     "description": "Built-in GeckoView frame and native bridge.",
     "browser_specific_settings": {
         "gecko": {
