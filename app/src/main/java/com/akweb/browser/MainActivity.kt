@@ -78,7 +78,12 @@ class MainActivity : Activity() {
         }
         val btnReload = Button(this).apply {
             text = "Muat ulang"
-            setOnClickListener { session?.reload() }
+            setOnClickListener {
+                // Kalau ekstensi belum terpasang, tombol ini mencoba pasang
+                // ulang (sukses = game langsung dibuka dari callback install).
+                if (extensionInstalled) session?.reload()
+                else runtime?.let { installExtension(it) }
+            }
         }
         root.addView(btnOpen)
         root.addView(btnReload)
@@ -136,8 +141,14 @@ class MainActivity : Activity() {
             geckoView.setSession(sess)
             sess.open(rt)
             DebugLog.append("GECKO: runtime + session siap")
+            // BUGFIX 2026-10-29: game JANGAN dibuka di sini. Dulu openGame()
+            // dipanggil langsung setelah installExtension(), padahal install
+            // itu async — halaman game keburu dimuat sebelum ekstensi siap,
+            // sehingga content script (run_at document_start) tidak sempat
+            // disuntikkan ke halaman pertama dan ekstensi terlihat "tidak
+            // muncul". Sekarang game dibuka dari callback install (sukses
+            // maupun gagal), jadi urutannya pasti: ekstensi dulu, game belakangan.
             installExtension(rt)
-            openGame()
         } catch (e: Exception) {
             DebugLog.append("GECKO GAGAL: ${e.message}")
             runOnUiThread {
@@ -161,12 +172,18 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     statusExtension.text = "EKSTENSI: TERPASANG"
                 }
+                // Baru sekarang buka game: ekstensi sudah siap, content
+                // script pasti ikut di halaman pertama.
+                openGame()
             },
             { error ->
                 DebugLog.append("EKSTENSI GAGAL: ${error?.message}")
                 runOnUiThread {
                     statusExtension.text = "EKSTENSI: GAGAL (${error?.message})"
                 }
+                // Tetap buka game supaya panel + halaman terlihat, dan
+                // status GAGAL di atas jadi bukti install yang gagal.
+                openGame()
             }
         )
     }
