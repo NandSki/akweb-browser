@@ -9,6 +9,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
 
 /**
@@ -123,6 +124,10 @@ class MainActivity : Activity() {
             runtime = rt
             val sess = GeckoSession()
             session = sess
+            // Mode desktop wajib: tanpa ini GeckoView memakai UA mobile dan
+            // situs game tidak jalan sebagai versi desktop. Set sebelum open.
+            sess.settings.userAgentMode = GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
+            sess.settings.viewportMode = GeckoSessionSettings.VIEWPORT_MODE_DESKTOP
             // Sengaja TIDAK memakai NavigationDelegate di versi review ini:
             // signature onLocationChange berubah antar versi GeckoView,
             // dan status URL di panel cukup diisi dari URL yang dibuka
