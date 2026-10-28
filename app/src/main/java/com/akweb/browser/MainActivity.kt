@@ -145,7 +145,7 @@ class MainActivity : Activity() {
         DebugLog.append("EKSTENSI: memasang dari $EXTENSION_LOCATION")
         rt.webExtensionController.installBuiltIn(EXTENSION_LOCATION).accept(
             { extension ->
-                extension.setMessageDelegate(
+                extension?.setMessageDelegate(
                     AkwebExtensionDelegate { name ->
                         lastNativeMessage = name
                     },
