@@ -1,7 +1,161 @@
-# STATUS — Proyek Android Browser AKWeb (siap review, belum di-build)
+# STATUS — Proyek 8BP Solver Browser (GeckoView + solver v2.39, tanpa AKWeb)
 
 Tanggal: 2026-10-27. Lokasi proyek lokal: `~/workspace/work/akweb-browser/`.
-**Ini BUKAN APK jadi, dan ekstensi di dalamnya TIDAK diklaim berfungsi penuh.**
+**Ini BUKAN APK jadi, dan solver di dalamnya TIDAK diklaim berfungsi penuh.**
+
+## Update 2026-11-07 (hapus AKWeb) — APK cuma solver kita
+
+Laporan user setelah install APK build run 42257787875: "Aku buka apl
+mu kok isi isinya punya akweb ya" — APK menampilkan UI/login AKWeb.
+Penyebab: proyek masih memasang ekstensi AKWeb (dari
+`assets/akweb-extension/`, salinan zip user) lewat
+`MainActivity.installExtension()` + `AkwebExtensionDelegate` +
+`NativeBridgeStub`, bersamaan dengan ekstensi solver. Ekstensi AKWeb
+itu yang menampilkan UI/login-nya di dalam game.
+
+**Yang DIHAPUS total (lokal, TIDAK ada push/CI oleh subagent):**
+- Folder `app/src/main/assets/akweb-extension/` beserta seluruh isinya
+  (18 file: manifest.json AKWeb, isolated-bridge.js,
+  readonly-game-snapshot.js, generated-*.js, ui/*.js, ui/assets/*).
+- `app/src/main/java/com/akweb/browser/AkwebExtensionDelegate.kt`
+  (jembatan GeckoView <-> ekstensi AKWeb).
+- `app/src/main/java/com/akweb/browser/NativeBridgeStub.kt` (host
+  native messaging stub `com.aimking.akweb.bridge`, balasan
+  `plan_tidak_tersedia`) — tidak dipakai apa pun selain delegate AKWeb,
+  jadi dihapus sekalian, bukan dipertahankan sebagai stub kosong.
+- `app/src/test/java/com/akweb/browser/NativeBridgeStubTest.kt` (tes
+  unit stub — ikut terhapus karena kelas yang dites sudah tidak ada;
+  workflow `:app:testDebugUnitTest` kini tidak punya tes lagi, tetap
+  jalan tanpa tes).
+
+**Yang DIUBAH:**
+- `MainActivity.kt` ditulis ulang tanpa jalur AKWeb: `installExtension()`
+  DIHAPUS; `setupGecko()` langsung memanggil
+  `installSolverExtension()`; game dibuka dari callback solver (sukses
+  maupun gagal), seperti sebelumnya. Dihapus: `EXTENSION_LOCATION`,
+  `extensionInstalled`, `lastNativeMessage`, `statusExtension`,
+  `statusNative`, `statusPlan`, tombol "Muat ulang" kini memakai
+  `solverInstalled`. Panel debug hanya menampilkan status SOLVER +
+  URL + log. Header komentar + label panel diubah ("8BP Solver
+  Browser"). Perbaikan subagent sebelumnya TETAP: gating panel solver
+  per-frame (`ownModule()`, 2026-11-07) dan ikon obeng 🔧 pojok kiri
+  bawah — tidak disentuh.
+- `AndroidManifest.xml`: label aplikasi `AKWeb Browser (review)` →
+  `8BP Solver Browser`.
+- `README.md`: ditulis ulang — proyek solver-only, tanpa AKWeb.
+
+**Yang TERSISA (sengaja, bukan kelalaian):**
+- Nama package/namespace `com.akweb.browser`, nama proyek/branch
+  `akweb-browser`, dan repo `NandSki/akweb-browser` TIDAK diganti
+  namanya — ganti nama package butuh ubah namespace + applicationId +
+  semua file Kotlin + workflow, dan tidak mengubah isi APK yang
+  terlihat user. Label aplikasi yang tampil di HP sudah "8BP Solver
+  Browser".
+- `app/src/main/assets/solver/` (salinan referensi userscript v2.39)
+  dan `app/src/main/assets/solver-extension/` (ekstensi solver yang
+  dipakai) TIDAK diubah.
+- Bagian-bagian lama STATUS.md di bawah ini masih menyebut AKWeb —
+  itu catatan sejarah build 2026-10-27 s.d. 2026-11-06, bukan keadaan
+  proyek sekarang.
+
+**Verifikasi lokal (tanpa Java/Android SDK di VM):**
+- `node --check` solver.js: OK (lihat bawah).
+- Grep: tidak ada lagi referensi `akweb-extension`,
+  `AkwebExtensionDelegate`, `NativeBridgeStub`, `plan_tidak_tersedia`,
+  `com.aimking.akweb.bridge` di file kode/assets (kecuali nama package
+  `com.akweb.browser` dan catatan sejarah di STATUS.md).
+- Keseimbangan kurung MainActivity.kt: OK (lihat bawah).
+- **TIDAK ada build yang dijalankan; TIDAK ada push ke GitHub; TIDAK
+  ada workflow CI yang dijalankan.** Parent yang push + build.
+
+**Yang belum terverifikasi / perlu dites di HP user (setelah build baru):**
+1. Build remote lolos (permukaan API yang dipakai sekarang lebih
+   kecil: `installBuiltIn` sekali, `FrameLayout`, `Gravity` — semuanya
+   API standar).
+2. Di HP: buka APK → langsung landscape fullscreen game, **TIDAK ADA
+   UI/login AKWeb apa pun**, panel solver v2.39 muncul di frame game
+   (garis + autoplay), ikon 🔧 di pojok kiri bawah, panel debug
+   menunjukkan `SOLVER: TERPASANG (v2.39)`.
+
+
+## Update 2026-11-07 — Panel solver cuma di frame game + ikon obeng 🔧
+
+Laporan user setelah install APK build run 42257787875: (1) menu solver
+muncul tapi TIDAK berfungsi (tidak ada garis/line), (2) minta triple-tap
+diganti ikon obeng di pojok kiri bawah. Dua-duanya diperbaiki lokal,
+TIDAK ada push/CI oleh subagent.
+
+### 1. Panel solver HANYA di frame yang punya Module sendiri
+**Diagnosis.** Content script solver jalan di SEMUA frame
+(`all_frames: true`) dan `init()` v2.39 membangun panel langsung di
+setiap frame — termasuk frame atas 8ballpool.com. Frame atas itu:
+- tidak punya `window.Module` sendiri (game + heap ada di iframe prod),
+- beda origin dengan prod (8ballpool.com vs prod-web-pool.miniclip.com)
+  sehingga `findModuleWin()` lintas frame selalu gagal (SecurityError),
+- panel + overlay canvas-nya menempel di dokumen frame atas dan
+  MENUTUPI panel hidup di frame prod (elemen `fixed` dokumen atas
+  selalu di atas konten iframe).
+Hasilnya user melihat panel MATI: tombol tidak jalan, tidak ada garis.
+v2.36 dulu membangun panel di semua frame dan v2.37 menghapus timer
+auto-sembunyi, jadi panel mati itu tampil terus.
+**Perbaikan** (`app/src/main/assets/solver-extension/solver.js` saja,
+fungsi `init()`):
+- `init()` sekarang menunggu `window.Module + HEAPU8` di frame SENDIRI
+  dulu (fungsi baru `ownModule()`, poll max 120 detik, 1x/detik).
+- Panel (`buildPanel()`, termasuk ikon 🎱 untuk buka lagi), `loadPokLearn`,
+  `loadCushLearn`, `updateGroupBtn`, `updateLearnStat` baru jalan
+  SETELAH Module sendiri ketemu — sekali saja (flag `_panelBuilt`).
+- Instance tanpa Module diam total (cuma `console.log` sekali setelah
+  120 detik), panel tidak dibangun, interval tidak start.
+- `findModuleWin()` / `heapViews()` TIDAK diubah — tetap dipakai untuk
+  BACA heap (frame sendiri dulu, fallback lintas frame untuk alur
+  Tampermonkey). Logika inti solver (fisika/tembak/deteksi) TIDAK diubah.
+- **Divergensi dari master:** perubahan ini HANYA di salinan APK.
+  Master userscript v2.39 (`~/workspace/goals/8-ball-pool-autoplay/files/`,
+  md5 `67eae7f57b1d09591334040f1b443669`) masih pakai `init()` lama —
+  kalau re-sync dari master, gating `ownModule()` harus dibawa lagi.
+  Salinan referensi `app/src/main/assets/solver/akweb-heap-solver-serius-v2.39.user.js`
+  juga TIDAK diubah (bukan yang dipakai content script).
+- Verifikasi: `node --check` OK; `buildPanel()` cuma dipanggil 1x
+  (di dalam gate `ownModule()`); `log()`/`stat()` null-safe jadi aman
+  dipanggil sebelum panel ada.
+
+### 2. Triple-tap diganti ikon obeng 🔧 (pojok kiri bawah)
+- `MainActivity.kt`: `OnTouchListener` triple-tap DIHAPUS total
+  (termasuk import `SystemClock`/`MotionEvent` yang sudah tidak dipakai).
+- Tombol `🔧` baru (48dp, margin 12dp, alpha 0.85, teks 20sp),
+  `FrameLayout.LayoutParams` gravity `BOTTOM|START`, ditambahkan
+  SETELAH `debugPanel` supaya z-order paling atas — selalu terlihat
+  dan bisa di-tap, walau panel debug sedang terbuka. Tap = tampil/
+  sembunyi panel debug (`toggleDebugPanel()`).
+- Label panel + pesan log disesuaikan ("tap ikon 🔧 ...", bukan
+  triple-tap). Tombol "Tutup panel debug" di dalam panel tetap ada.
+- Verifikasi: kurung Kotlin seimbang (`{`/`}` 52/52, `(`/`)` 144/144);
+  tidak ada lagi `setOnTouchListener`/`SystemClock`/`MotionEvent`.
+
+### Verifikasi lokal (tanpa Java/Android SDK di VM)
+- `solver.js`: `node --check` OK (lihat §1).
+- `MainActivity.kt`: keseimbangan kurung OK (lihat §2).
+- **TIDAK ada build yang dijalankan** (VM tidak punya java/gradle/
+  Android SDK); TIDAK ada push ke GitHub; TIDAK ada workflow CI
+  yang dijalankan. Parent yang push + build.
+
+### Yang belum terverifikasi / perlu dites di HP user (setelah build baru)
+1. Build remote lolos (API baru yang dipakai: `FrameLayout`,
+   `Gravity.BOTTOM|START`, `Button` — semuanya API Android standar,
+   risiko gagal kompilasi kecil).
+2. Di HP: buka APK → langsung landscape fullscreen game; **panel
+   solver TIDAK muncul di halaman 8ballpool.com** (frame atas diam),
+   panel solver muncul di dalam frame game (prod) dengan garis +
+   autoplay berfungsi.
+3. Ikon 🔧 terlihat di pojok kiri bawah di atas game; tap → panel
+   debug muncul; tap lagi / tombol "Tutup panel debug" → sembunyi.
+   Ikon tidak mengganggu aim/tembak secara berarti (48dp di sudut).
+4. Kalau panel solver tetap tidak muncul di frame game, kirim isi
+   console/log: baris `[AKV2] INIT ... TIDAK ada Module di frame
+   sendiri` berarti gating bekerja tapi Module tidak ketemu di frame
+   prod (masalah lain); kalau tidak ada baris itu sama sekali,
+   content script solver tidak jalan.
 
 ## Update 2026-11-06 — Inject solver v2.39 + fullscreen ala AKWeb
 

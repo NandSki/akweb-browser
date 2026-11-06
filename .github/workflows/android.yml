@@ -1,4 +1,4 @@
-# Build AKWeb Browser (debug) — pola yang sama dengan proyek lama 8bp-apk.
+# Build 8BP Solver Browser (debug) — pola yang sama dengan proyek lama 8bp-apk.
 # STATUS PUSH (2026-10-27): user SUDAH SETUJU memakai repo private
 # NandSki/8bp-apk untuk build ini dan minta cepat. Workflow ini SIAP PUSH,
 # tapi push/build TIDAK dilakukan oleh subagent pembuat proyek — parent
@@ -11,7 +11,7 @@
 # Java 17, compileSdk 37 (GeckoView 157 menuntutnya), targetSdk 34.
 # Perbedaan dari proyek lama: dependensi GeckoView (org.mozilla.geckoview)
 # dan android.useAndroidX=true (lihat gradle.properties).
-name: Build AKWeb Browser (debug)
+name: Build 8BP Solver Browser (debug)
 
 on:
   workflow_dispatch:

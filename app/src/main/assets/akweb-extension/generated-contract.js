@@ -1,1 +1,0 @@
-globalThis.AKWEB_EXTENT_CONTRACT=Object.freeze({protocol:"akweb-native-bridge",protocolSchema:1,nativeApp:"com.aimking.akweb.bridge",documentOrigins:["https://8ballpool.com","https://www.8ballpool.com","https://prod-web-pool.miniclip.com"],targetFrameOrigin:"https://prod-web-pool.miniclip.com",extensionRevision:"fd7647a7fad23bca",localDebug:{enabled:false}});

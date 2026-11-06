@@ -2,8 +2,6 @@ package com.akweb.browser
 
 import android.app.Activity
 import android.os.Bundle
-import android.os.SystemClock
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -17,64 +15,54 @@ import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
 
 /**
- * Browser GeckoView minimal + panel debug.
+ * Browser GeckoView minimal + panel debug — HANYA solver kita.
  *
- * TAMPILAN (ala AKWeb): fullscreen — GeckoView mengisi seluruh layar
- * dan game langsung dibuka saat APK dijalankan. Panel debug (status
- * ekstensi/solver, tombol, log) DISEMBUNYIKAN dari tampilan utama dan
- * hanya muncul lewat triple-tap di layar game (atau tombol "Tutup
- * panel debug" di dalam panel itu sendiri).
+ * TAMPILAN: fullscreen — GeckoView mengisi seluruh layar dan game
+ * langsung dibuka saat APK dijalankan. Panel debug (status solver,
+ * tombol, log) DISEMBUNYIKAN dari tampilan utama dan hanya muncul
+ * lewat ikon obeng 🔧 di pojok kiri bawah layar (atau tombol
+ * "Tutup panel debug" di dalam panel itu sendiri).
  *
  * - Membuka https://8ballpool.com/game (langsung ke halaman game,
  *   bukan halaman utama; orientasi landscape — lihat AndroidManifest).
- * - Menginstal ekstensi dari assets/akweb-extension/ (salinan verbatim
- *   dari zip yang dikirim user, BUKAN dari APK AKWeb asli).
- * - Menginstal ekstensi solver dari assets/solver-extension/ (content
- *   script solver heap v2.39) sebagai jalur TERPISAH dari ekstensi
- *   AKWeb — solver di-inject ke frame game via content script
- *   (all_frames, document_start), bukan via javascript: URL.
+ * - Menginstal HANYA ekstensi solver dari assets/solver-extension/
+ *   (content script solver heap v2.39) — solver di-inject ke frame
+ *   game via content script (all_frames, document_start), bukan via
+ *   javascript: URL.
+ * - TIDAK ADA ekstensi AKWeb di aplikasi ini (dihapus 2026-11-07
+ *   atas permintaan user: APK sebelumnya menampilkan UI/login AKWeb).
+ *   Tidak ada native bridge, tidak ada plan, tidak ada login AKWeb.
  * - Menampilkan di panel debug (TERSEMBUNYI, lihat atas): status
- *   ekstensi, status solver, URL yang dibuka, pesan native yang
- *   diterima, dan status plan.
- *
- * Yang TIDAK dilakukan aplikasi ini: menjalankan snapshot/tembak
- * otomatis. Tanpa plan dari host asli, ekstensi berhenti di
- * handshake plan — panel inilah yang membuktikannya di lapangan.
+ *   solver, URL yang dibuka, dan log.
  */
 class MainActivity : Activity() {
 
     companion object {
         const val GAME_URL = "https://8ballpool.com/game"
-        const val EXTENSION_LOCATION = "resource://android/assets/akweb-extension/"
-        // Ekstensi solver (jalur terpisah dari AKWeb): content script
-        // solver heap v2.39, diinstal built-in dari assets.
+        // Ekstensi solver: content script solver heap v2.39, diinstal
+        // built-in dari assets.
         const val SOLVER_EXTENSION_LOCATION = "resource://android/assets/solver-extension/"
         const val SOLVER_VERSION = "v2.39"
     }
 
-    private lateinit var statusExtension: TextView
     private lateinit var statusSolver: TextView
     private lateinit var statusUrl: TextView
-    private lateinit var statusNative: TextView
-    private lateinit var statusPlan: TextView
     private lateinit var logView: TextView
     private lateinit var geckoView: GeckoView
     private lateinit var debugPanel: LinearLayout
 
     private var runtime: GeckoRuntime? = null
     private var session: GeckoSession? = null
-    private var extensionInstalled = false
     private var solverInstalled = false
-    private var lastNativeMessage = "belum ada"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // FULLSCREEN ala AKWeb: GeckoView mengisi seluruh layar, game
-        // langsung kebuka saat APK dijalankan. Panel debug TIDAK terlihat
-        // di tampilan utama — disembunyikan (GONE) dan hanya muncul lewat
-        // triple-tap di layar game (atau tombol "Tutup panel debug" di
-        // dalam panel itu sendiri).
+        // FULLSCREEN: GeckoView mengisi seluruh layar, game langsung
+        // kebuka saat APK dijalankan. Panel debug TIDAK terlihat di
+        // tampilan utama — disembunyikan (GONE) dan hanya muncul lewat
+        // ikon obeng 🔧 di pojok kiri bawah (atau tombol "Tutup panel
+        // debug" di dalam panel itu sendiri).
         val root = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -108,20 +96,13 @@ class MainActivity : Activity() {
             )
         }
 
-        debugPanel.addView(label("AKWeb Browser (review) — GeckoView + ekstensi AKWeb + solver v2.39"))
-        debugPanel.addView(label("BUKAN APK jadi. Proyek siap review; belum pernah di-build."))
-        debugPanel.addView(label("Panel debug tersembunyi — triple-tap layar game untuk tampil/sembunyi."))
+        debugPanel.addView(label("8BP Solver Browser — GeckoView + solver v2.39"))
+        debugPanel.addView(label("Panel debug tersembunyi — tap ikon 🔧 di pojok kiri bawah untuk tampil/sembunyi."))
 
-        statusExtension = label("EKSTENSI: belum dipasang")
         statusSolver = label("SOLVER: belum dipasang")
         statusUrl = label("URL: -")
-        statusNative = label("NATIVE: belum ada pesan")
-        statusPlan = label("PLAN: " + NativeBridgeStub.PLAN_STATUS + " (host stub)")
-        debugPanel.addView(statusExtension)
         debugPanel.addView(statusSolver)
         debugPanel.addView(statusUrl)
-        debugPanel.addView(statusNative)
-        debugPanel.addView(statusPlan)
 
         val btnOpen = Button(this).apply {
             text = "Buka 8ballpool.com/game"
@@ -130,10 +111,11 @@ class MainActivity : Activity() {
         val btnReload = Button(this).apply {
             text = "Muat ulang"
             setOnClickListener {
-                // Kalau ekstensi belum terpasang, tombol ini mencoba pasang
-                // ulang (sukses = game langsung dibuka dari callback install).
-                if (extensionInstalled) session?.reload()
-                else runtime?.let { installExtension(it) }
+                // Kalau solver belum terpasang, tombol ini mencoba
+                // pasang ulang (sukses = game langsung dibuka dari
+                // callback install).
+                if (solverInstalled) session?.reload()
+                else runtime?.let { installSolverExtension(it) }
             }
         }
         val btnReinjectSolver = Button(this).apply {
@@ -171,30 +153,30 @@ class MainActivity : Activity() {
 
         root.addView(debugPanel)
 
-        // Triple-tap di layar game = tampil/sembunyi panel debug.
-        // Listener mengembalikan false supaya sentuhan tetap diteruskan
-        // ke game (tidak mengganggu aim/tembak).
-        var tapCount = 0
-        var lastTapMs = 0L
-        geckoView.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                val now = SystemClock.uptimeMillis()
-                tapCount = if (now - lastTapMs < 600) tapCount + 1 else 1
-                lastTapMs = now
-                if (tapCount >= 3) {
-                    tapCount = 0
-                    toggleDebugPanel()
-                }
+        // Ikon obeng 🔧 di pojok kiri bawah — selalu terlihat di atas
+        // GeckoView (dan di atas panel debug), tap = tampil/sembunyi
+        // panel debug. Ukuran 48dp, margin 12dp, alpha 0.85 supaya
+        // tidak terlalu menutupi game. DITAMBAHKAN SETELAH debugPanel
+        // supaya z-order-nya paling atas.
+        val wrenchSizePx = (48 * resources.displayMetrics.density).toInt()
+        val wrenchMarginPx = (12 * resources.displayMetrics.density).toInt()
+        val wrenchBtn = Button(this).apply {
+            text = "🔧"
+            textSize = 20f
+            alpha = 0.85f
+            layoutParams = FrameLayout.LayoutParams(wrenchSizePx, wrenchSizePx).apply {
+                gravity = android.view.Gravity.BOTTOM or android.view.Gravity.START
+                setMargins(wrenchMarginPx, wrenchMarginPx, wrenchMarginPx, wrenchMarginPx)
             }
-            false
+            setOnClickListener { toggleDebugPanel() }
         }
+        root.addView(wrenchBtn)
 
         setContentView(root)
 
         DebugLog.listener = { text ->
             runOnUiThread {
                 logView.text = text
-                statusNative.text = "NATIVE: $lastNativeMessage"
             }
         }
 
@@ -204,7 +186,7 @@ class MainActivity : Activity() {
     private fun toggleDebugPanel() {
         val shown = debugPanel.visibility != View.VISIBLE
         debugPanel.visibility = if (shown) View.VISIBLE else View.GONE
-        DebugLog.append("PANEL DEBUG: " + if (shown) "ditampilkan (triple-tap lagi / tombol Tutup untuk sembunyi)" else "disembunyikan")
+        DebugLog.append("PANEL DEBUG: " + if (shown) "ditampilkan (tap 🔧 / tombol Tutup untuk sembunyi)" else "disembunyikan")
     }
 
     private fun setupGecko() {
@@ -217,83 +199,49 @@ class MainActivity : Activity() {
             // situs game tidak jalan sebagai versi desktop. Set sebelum open.
             sess.settings.userAgentMode = GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
             sess.settings.viewportMode = GeckoSessionSettings.VIEWPORT_MODE_DESKTOP
-            // Sengaja TIDAK memakai NavigationDelegate di versi review ini:
+            // Sengaja TIDAK memakai NavigationDelegate di versi ini:
             // signature onLocationChange berubah antar versi GeckoView,
             // dan status URL di panel cukup diisi dari URL yang dibuka
-            // (openGame). Navigasi internal game (iframe prod) tetap
-            // terlihat lewat pesan native ekstensi di log.
+            // (openGame).
             geckoView.setSession(sess)
             sess.open(rt)
             DebugLog.append("GECKO: runtime + session siap")
             // BUGFIX 2026-10-29: game JANGAN dibuka di sini. Dulu openGame()
-            // dipanggil langsung setelah installExtension(), padahal install
+            // dipanggil langsung setelah install extension, padahal install
             // itu async — halaman game keburu dimuat sebelum ekstensi siap,
             // sehingga content script (run_at document_start) tidak sempat
-            // disuntikkan ke halaman pertama dan ekstensi terlihat "tidak
+            // disuntikkan ke halaman pertama dan solver terlihat "tidak
             // muncul". Sekarang game dibuka dari callback install (sukses
-            // maupun gagal), jadi urutannya pasti: ekstensi dulu, game belakangan.
-            installExtension(rt)
+            // maupun gagal), jadi urutannya pasti: solver dulu, game belakangan.
+            installSolverExtension(rt)
         } catch (e: Exception) {
             DebugLog.append("GECKO GAGAL: ${e.message}")
             runOnUiThread {
-                statusExtension.text = "EKSTENSI: gagal (Gecko error: ${e.message})"
+                statusSolver.text = "SOLVER: gagal (Gecko error: ${e.message})"
             }
         }
     }
 
-    private fun installExtension(rt: GeckoRuntime) {
-        DebugLog.append("EKSTENSI: memasang dari $EXTENSION_LOCATION")
-        rt.webExtensionController.installBuiltIn(EXTENSION_LOCATION).accept(
-            { extension ->
-                extension?.setMessageDelegate(
-                    AkwebExtensionDelegate { name ->
-                        lastNativeMessage = name
-                    },
-                    NativeBridgeStub.NATIVE_APP
-                )
-                extensionInstalled = true
-                DebugLog.append("EKSTENSI: terpasang (id dari manifest gecko)")
-                runOnUiThread {
-                    statusExtension.text = "EKSTENSI: TERPASANG"
-                }
-                // Lanjut pasang ekstensi solver DULU, baru buka game:
-                // content script solver harus terdaftar sebelum halaman
-                // pertama dimuat, sama seperti content script AKWeb.
-                installSolverExtension(rt)
-            },
-            { error ->
-                DebugLog.append("EKSTENSI GAGAL: ${error?.message}")
-                runOnUiThread {
-                    statusExtension.text = "EKSTENSI: GAGAL (${error?.message})"
-                }
-                // Tetap lanjut ke solver + game supaya panel dan halaman
-                // terlihat, dan status GAGAL di atas jadi bukti install
-                // yang gagal.
-                installSolverExtension(rt)
-            }
-        )
-    }
-
     /**
-     * Pasang ekstensi solver (jalur TERPISAH dari ekstensi AKWeb).
+     * Pasang ekstensi solver (SATU-SATUNYA ekstensi di aplikasi ini).
      *
      * Isi: satu content script (solver.js, = solver heap v2.39 tanpa
-     * blok metadata userscript) dengan matches = origin game,
-     * all_frames = true, run_at = document_start. Cara inject ini
-     * dipilih karena:
+     * blok metadata userscript, dengan gating ownModule() 2026-11-07
+     * supaya panel hanya dibangun di frame game yang punya Module
+     * sendiri) dengan matches = origin game, all_frames = true,
+     * run_at = document_start. Cara inject ini dipilih karena:
      * - GeckoView TIDAK punya API publik evaluateJS/evaluateJavascript
      *   di GeckoSession (tidak seperti WebView.evaluateJavascript),
      *   dan loadUri("javascript:...") tidak disarankan / tidak bisa
      *   diandalkan untuk file 228 KB di semua frame.
      * - Content script WebExtension adalah cara resmi GeckoView untuk
-     *   menyuntikkan JS ke halaman + iframe — persis cara content
-     *   script AKWeb (readonly-game-snapshot.js) disuntikkan ke frame
-     *   prod-web-pool. Solver sendiri juga sudah dirancang untuk pola
-     *   ini: @run-at document-start + inject() script-tag ke page
-     *   context, dan init() menunggu Module sampai 120 detik.
-     * - Urutan install: AKWeb dulu, solver kedua, game dibuka dari
-     *   callback solver (sukses maupun gagal), supaya kedua content
-     *   script terdaftar sebelum halaman pertama dimuat.
+     *   menyuntikkan JS ke halaman + iframe. Solver sendiri juga sudah
+     *   dirancang untuk pola ini: @run-at document-start + inject()
+     *   script-tag ke page context, dan init() menunggu Module sampai
+     *   120 detik.
+     * - Urutan: solver dipasang dulu, game dibuka dari callback solver
+     *   (sukses maupun gagal), supaya content script terdaftar sebelum
+     *   halaman pertama dimuat.
      */
     private fun installSolverExtension(rt: GeckoRuntime) {
         DebugLog.append("SOLVER: memasang dari $SOLVER_EXTENSION_LOCATION ($SOLVER_VERSION)")
@@ -304,7 +252,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     statusSolver.text = "SOLVER: TERPASANG ($SOLVER_VERSION)"
                 }
-                // Baru sekarang buka game: kedua ekstensi sudah siap,
+                // Baru sekarang buka game: ekstensi sudah siap,
                 // content script pasti ikut di halaman pertama.
                 openGame()
             },

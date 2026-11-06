@@ -3899,19 +3899,31 @@ var AKV2_VERSION = '2.39';
       } finally { S.ticking = false; }
     }
     function init() {
-      // v2.36: FIX login — panel SELALU dibangun di semua frame.
-      // Dulu: di 8ballpool.com top frame (login) script langsung return → panel
-      // nggak muncul → "cheat cuma jalan di guest". Sekarang panel muncul di
-      // mana aja, dan findModuleWin() yang cari Module di semua frame.
-      // Anti panel ganda: cuma frame yang NEMU Module (atau prod/iframe) yang
-      // tampilkan panel penuh; frame lain sembunyikan panel setelah 5 detik
-      // kalau Module nggak ketemu.
+      // APK/Gecko 2026-11-07: panel HANYA di frame yang punya Module SENDIRI.
+      // Content script jalan di SEMUA frame (all_frames) — dulu buildPanel()
+      // langsung jalan di frame atas 8ballpool.com juga. Frame atas itu:
+      // (1) tidak punya window.Module sendiri (game + heap ada di iframe prod),
+      // (2) beda origin dengan prod (8ballpool.com vs prod-web-pool.miniclip.com)
+      //     sehingga findModuleWin() lintas frame selalu gagal (SecurityError),
+      // (3) panel + overlay canvas-nya menempel di dokumen frame atas dan
+      //     MENUTUPI panel hidup di frame prod (elemen fixed dokumen atas
+      //     selalu di atas konten iframe) — user lihat panel MATI: tombol
+      //     tidak jalan, tidak ada garis. v2.36 dulu membangun panel di semua
+      //     frame dan v2.37 menghapus timer auto-sembunyi, jadi panel mati itu
+      //     tampil terus. Solusi: JANGAN bangun panel sebelum window.Module +
+      //     HEAPU8 ketemu di frame SENDIRI. Instance tanpa Module diam total
+      //     (cuma console.log) sampai 120 detik, lalu berhenti. findModuleWin()
+      //     / heapViews() TIDAK diubah — tetap dipakai untuk BACA heap
+      //     (frame sendiri dulu, fallback lintas frame untuk alur Tampermonkey).
+      // CATATAN: perubahan ini HANYA di salinan APK (solver-extension/),
+      // master userscript v2.39 di goals/ masih pakai init() lama — kalau
+      // re-sync dari master, gating ini harus dibawa lagi.
       var IS_IFRAME = false;
       try { IS_IFRAME = (window.self !== window.top); } catch (e) {}
-      buildPanel();
-      // v2.37: panel TIDAK PERNAH auto-sembunyi (timer v2.36 dihapus — itu bug:
-      // game login bisa load >8 detik, panel keburu disembunyiin sebelum Module muncul).
-      // Kalau ada panel ganda, user bisa close manual pakai tombol ✕.
+      function ownModule() {
+        try { if (window.Module && window.Module.HEAPU8) return window.Module; } catch (e) {}
+        return null;
+      }
       // v2.38: FIX crash pas buka — interval JANGAN langsung jalan. Tunggu Module
       // ketemu dulu, baru start. Dulu interval scan heap tiap 3 detik langsung jalan
       // pas game masih loading → heap belum stabil → browser crash (apalagi di HP).
@@ -3925,15 +3937,28 @@ var AKV2_VERSION = '2.39';
         log('Interval dimulai (Module sudah ketemu)');
       }
       window.akv2StartIntervals = startIntervals;
-      loadPokLearn(); // v2.4
-      loadCushLearn(); // v2.8
-      updateGroupBtn(); // v2.9: tampilkan status grup awal
-      updateLearnStat();
-      // v2.37: log URL + frame info buat debug login
-      try { log('INIT url=' + location.href.slice(0, 80) + ' iframe=' + IS_IFRAME + ' prod=' + IS_PROD); } catch (e) {}
+      var _panelBuilt = false;
       var tries = 0;
       (function wait() {
         tries++;
+        // Langkah 1: tunggu Module di frame SENDIRI. Belum ada → diam, jangan
+        // bangun panel (panel di frame tanpa Module pasti mati).
+        if (!ownModule()) {
+          if (tries < 120) { setTimeout(wait, 1000); return; }
+          try { console.log('[AKV2] INIT url=' + location.href.slice(0, 80) + ' iframe=' + IS_IFRAME + ' — TIDAK ada Module di frame sendiri setelah 120 detik, instance diam (panel tidak dibangun)'); } catch (e) {}
+          return;
+        }
+        // Langkah 2: Module sendiri ketemu → baru bangun panel (sekali saja),
+        // lalu lanjut seperti dulu: tunggu heap siap → start interval.
+        if (!_panelBuilt) {
+          _panelBuilt = true;
+          buildPanel();
+          loadPokLearn(); // v2.4
+          loadCushLearn(); // v2.8
+          updateGroupBtn(); // v2.9: tampilkan status grup awal
+          updateLearnStat();
+          try { log('INIT url=' + location.href.slice(0, 80) + ' iframe=' + IS_IFRAME + ' prod=' + IS_PROD + ' — Module frame sendiri ketemu, panel dibangun'); } catch (e) {}
+        }
         var h = heapViews();
         if (h) { stat('Module ketemu, heap ' + h.bytes + ' byte. Tekan SCAN saat bola diam.'); log('Module OK heap=' + h.bytes); try { startIntervals(); } catch (eSI) {} }
         else if (tries < 120) { stat('Menunggu Module... (' + tries + ')'); setTimeout(wait, 1000); }
