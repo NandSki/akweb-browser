@@ -1,0 +1,43 @@
+{
+    "browser_specific_settings": {
+        "gecko": {
+            "data_collection_permissions": {
+                "required": [
+                    "none"
+                ]
+            },
+            "id": "akv2-solver@example.invalid",
+            "strict_min_version": "157.0"
+        }
+    },
+    "content_scripts": [
+        {
+            "all_frames": true,
+            "js": [
+                "solver.js"
+            ],
+            "match_about_blank": false,
+            "matches": [
+                "https://prod-web-pool.miniclip.com/*",
+                "https://*.pool.miniclippt.com/*",
+                "https://*.miniclip.com/*",
+                "https://*.miniclippt.com/*",
+                "https://8ballpool.com/*",
+                "https://www.8ballpool.com/*"
+            ],
+            "run_at": "document_start"
+        }
+    ],
+    "description": "Injects the 8BP heap solver (Tampermonkey userscript, v2.39) into the game frames. Separate from the AKWeb extension; no native bridge.",
+    "manifest_version": 2,
+    "name": "8BP Heap Solver v2.39",
+    "permissions": [
+        "https://prod-web-pool.miniclip.com/*",
+        "https://*.pool.miniclippt.com/*",
+        "https://*.miniclip.com/*",
+        "https://*.miniclippt.com/*",
+        "https://8ballpool.com/*",
+        "https://www.8ballpool.com/*"
+    ],
+    "version": "2.39"
+}

@@ -3,6 +3,101 @@
 Tanggal: 2026-10-27. Lokasi proyek lokal: `~/workspace/work/akweb-browser/`.
 **Ini BUKAN APK jadi, dan ekstensi di dalamnya TIDAK diklaim berfungsi penuh.**
 
+## Update 2026-11-06 — Inject solver v2.39 + fullscreen ala AKWeb
+
+Perubahan sejak 2026-10-27 (semua lokal, TIDAK ada push/CI oleh subagent):
+
+### 1. Inject solver heap v2.39 (jalur terpisah dari ekstensi AKWeb)
+- Solver disalin verbatim ke
+  `app/src/main/assets/solver/akweb-heap-solver-serius-v2.39.user.js`
+  (md5 `67eae7f57b1d09591334040f1b443669`, sama dengan file sumber di
+  `~/workspace/goals/8-ball-pool-autoplay/files/`, 229.893 byte).
+- Ekstensi solver baru di `app/src/main/assets/solver-extension/`:
+  - `manifest.json` — manifest v2, gecko.id
+    `akv2-solver@example.invalid`, strict_min_version 157.0, satu
+    content script `solver.js`, matches = origin game
+    (prod-web-pool.miniclip.com, *.pool.miniclippt.com,
+    *.miniclip.com, *.miniclippt.com, 8ballpool.com,
+    www.8ballpool.com), `all_frames: true`,
+    `run_at: document_start`.
+  - `solver.js` (229.223 byte) — isi solver v2.39 TANPA 14 baris blok
+    metadata `==UserScript==` (diverifikasi identik dengan badan
+    userscript, `node --check` OK). Blok itu hanya dibaca Tampermonkey;
+    sebagai content script tidak dibutuhkan.
+- `MainActivity.kt` — fungsi baru `installSolverExtension(rt)`:
+  memasang ekstensi solver via `installBuiltIn(
+  "resource://android/assets/solver-extension/")`. Urutan install:
+  ekstensi AKWeb dulu → solver kedua → game dibuka dari callback
+  solver (sukses maupun gagal), supaya kedua content script terdaftar
+  sebelum halaman pertama dimuat. Kode ekstensi AKWeb TIDAK diubah.
+- Panel debug: status baru `SOLVER: TERPASANG (v2.39)` /
+  `SOLVER: GAGAL (...)` / `SOLVER: belum dipasang`, plus tombol
+  "Muat ulang (re-inject solver)" (me-reload halaman → content
+  script disuntikkan ulang).
+- **Cara inject yang dipilih: WebExtension content script** (bukan
+  `javascript:` URL, bukan evaluate JS). Alasan: GeckoView TIDAK
+  punya API publik evaluateJS di GeckoSession (tidak seperti
+  WebView.evaluateJavascript), dan `loadUri("javascript:...")` tidak
+  bisa diandalkan untuk file 228 KB di semua frame. Content script
+  adalah cara resmi GeckoView — persis cara content script AKWeb
+  (`readonly-game-snapshot.js`) disuntikkan ke frame prod-web-pool.
+  Solver juga memang dirancang untuk pola ini: `@run-at
+  document-start` + `inject()` script-tag ke page context, dan
+  `init()` menunggu Module sampai 120 detik.
+
+### 2. Tampilan fullscreen ala AKWeb
+- GeckoView mengisi seluruh layar (`FrameLayout` MATCH_PARENT);
+  panel debug + semua tombol DISEMBUNYIKAN dari tampilan utama
+  (`View.GONE`). Game langsung kebuka begitu APK dijalankan.
+- Panel debug hanya muncul lewat **triple-tap di layar game**
+  (3 ketukan < 600 ms; `OnTouchListener` mengembalikan `false`
+  supaya sentuhan tetap diteruskan ke game) atau tombol "Tutup
+  panel debug" di dalam panel itu sendiri.
+
+### 3. Persyaratan user lainnya
+- `GAME_URL` diubah ke `https://8ballpool.com/game`
+  (sebelumnya `https://8ballpool.com`).
+- Orientasi **landscape** saat pertama masuk: `AndroidManifest.xml`,
+  `android:screenOrientation="landscape"` +
+  `android:configChanges="orientation|screenSize|keyboardHidden"`
+  di `.MainActivity`.
+- Mode **desktop dipertahankan**: `USER_AGENT_MODE_DESKTOP` +
+  `VIEWPORT_MODE_DESKTOP` di `MainActivity.setupGecko()` (tidak diubah).
+- **ABI filter arm64-v8a saja: SUDAH ADA** di `app/build.gradle`
+  (`ndk { abiFilters += "arm64-v8a" }`, baris 20) sejak sebelum
+  tugas ini — tidak ada perubahan yang dibutuhkan. Tanpa filter,
+  APK ikut membawa lib x86_64 (~185 MB) dan armeabi-v7a (~130 MB);
+  dengan filter, perkiraan APK ~190 MB (GeckoView libxul 148 MB
+  mendominasi; user sudah tahu dan setuju pakai Gecko).
+
+### Verifikasi lokal (tanpa Java/Android SDK di VM)
+- Keseimbangan kurung semua file Kotlin yang diubah: seimbang
+  (MainActivity 345 baris, braces 0, parens 0).
+- `solver.js`: `node --check` OK; identik dengan badan userscript
+  v2.39; `manifest.json` solver: JSON valid.
+- `AndroidManifest.xml`: landscape + configChanges ada;
+  `GAME_URL`, desktop UA, ABI filter terkonfirmasi lewat grep.
+- **TIDAK ada build yang dijalankan** (VM tidak punya java/gradle/
+  Android SDK); TIDAK ada push ke GitHub; TIDAK ada workflow CI
+  yang dijalankan. Semua masih harus diverifikasi lewat build
+  remote pertama (lihat bawah).
+
+### Yang belum terverifikasi / perlu dites di HP user
+1. Build remote pertama (GitHub Actions, `:app:assembleDebug`) —
+   permukaan API baru yang dipakai (`installBuiltIn` kedua,
+   `FrameLayout`, `setOnTouchListener`) harus lolos kompilasi
+   GeckoView 157.
+2. Di HP: APK dibuka → langsung landscape fullscreen game
+   (https://8ballpool.com/game), tanpa panel debug terlihat.
+3. Panel solver muncul di dalam game (garis/lines + panel solver
+   v2.39); status panel debug (triple-tap) menunjukkan
+   `SOLVER: TERPASANG (v2.39)`.
+4. Triple-tap tidak mengganggu aim/tembak game; tombol "Tutup
+   panel debug" menyembunyikan panel lagi.
+5. Kalau status solver `GAGAL`, kirim isi log panel (baris
+   `SOLVER ...`) — kemungkinan besar manifest/id ekstensi solver
+   ditolak GeckoView 157.
+
 ## Persetujuan build (dicatat sesuai update user 2026-10-27)
 
 - User **SETUJU** memakai GitHub-nya, repo private **NandSki/8bp-apk**,
