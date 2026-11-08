@@ -1,5 +1,10 @@
 pluginManagement {
     repositories {
+        // 2026-11-08: mirror Maven Central Google didahulukan — artifact
+        // JetBrains (mis. kotlin-compiler-embeddable) via repo standar
+        // dialihkan ke GitHub Releases yang sedang 504 dari runner.
+        // Mirror ini menyajikan file yang sama (terverifikasi 206).
+        maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2") }
         gradlePluginPortal()
         google()
         mavenCentral()
@@ -10,6 +15,7 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2") }
         google()
         mavenCentral()
         maven { url = uri("https://maven.mozilla.org/maven2") }
