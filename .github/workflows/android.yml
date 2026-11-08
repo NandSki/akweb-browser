@@ -36,11 +36,21 @@ jobs:
           yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
           "$SDKMGR" "platform-tools" "platforms;android-37.0" "build-tools;36.0.0"
 
+      # 2026-11-08: gradle/gradle-build-action gagal 3x berturut-turut di
+      # "Provision Gradle 9.3.1" (download distribusi kena HTTP 504 +
+      # cache service 400 — infra GitHub, bukan kode; kompilasi belum
+      # sempat jalan). Workaround: download Gradle langsung via curl
+      # (services.gradle.org terjangkau) dan jalankan binernya.
+      # Bila setup-gradle sudah pulih, boleh dikembalikan ke action.
+      - name: Install Gradle 9.3.1 (direct download)
+        run: |
+          curl -fsSL -o /tmp/gradle-9.3.1-bin.zip https://services.gradle.org/distributions/gradle-9.3.1-bin.zip
+          unzip -q /tmp/gradle-9.3.1-bin.zip -d /tmp
+          echo "/tmp/gradle-9.3.1/bin" >> "$GITHUB_PATH"
+          gradle --version
+
       - name: Build debug APK + unit test
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: "9.3.1"
-          arguments: :app:assembleDebug :app:testDebugUnitTest
+        run: gradle :app:assembleDebug :app:testDebugUnitTest --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
