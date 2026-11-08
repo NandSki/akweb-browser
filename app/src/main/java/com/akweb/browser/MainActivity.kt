@@ -54,6 +54,8 @@ class MainActivity : Activity() {
     private var runtime: GeckoRuntime? = null
     private var session: GeckoSession? = null
     private var solverInstalled = false
+    // PoC-3: bridge JSON (tanpa .so). Satu delegate untuk satu ekstensi.
+    private var bridgeDelegate: BridgeDelegate? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -246,11 +248,25 @@ class MainActivity : Activity() {
     private fun installSolverExtension(rt: GeckoRuntime) {
         DebugLog.append("SOLVER: memasang dari $SOLVER_EXTENSION_LOCATION ($SOLVER_VERSION)")
         rt.webExtensionController.installBuiltIn(SOLVER_EXTENSION_LOCATION).accept(
-            {
+            { extension ->
                 solverInstalled = true
                 DebugLog.append("SOLVER: terpasang ($SOLVER_VERSION, content script document_start, all_frames)")
                 runOnUiThread {
                     statusSolver.text = "SOLVER: TERPASANG ($SOLVER_VERSION)"
+                }
+                // PoC-3: daftarkan bridge JSON SEBELUM game dibuka, supaya
+                // pesan dari background script (yang dikirim duluan) ikut
+                // antre dan diterima delegate, bukan hilang. nativeApp
+                // harus sama dengan yang dipakai bridge.js connectNative.
+                try {
+                    val delegate = BridgeDelegate { text ->
+                        DebugLog.append(text)
+                    }
+                    bridgeDelegate = delegate
+                    extension.setMessageDelegate(delegate, BridgeDelegate.NATIVE_APP)
+                    DebugLog.append("BRIDGE: delegate terdaftar (${BridgeDelegate.NATIVE_APP})")
+                } catch (e: Exception) {
+                    DebugLog.append("BRIDGE GAGAL daftar delegate: ${e.message}")
                 }
                 // Baru sekarang buka game: ekstensi sudah siap,
                 // content script pasti ikut di halaman pertama.
