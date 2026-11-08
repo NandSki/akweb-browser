@@ -39,12 +39,16 @@ jobs:
       # 2026-11-08: gradle/gradle-build-action gagal 3x berturut-turut di
       # "Provision Gradle 9.3.1" (download distribusi kena HTTP 504 +
       # cache service 400 — infra GitHub, bukan kode; kompilasi belum
-      # sempat jalan). Workaround: download Gradle langsung via curl
-      # (services.gradle.org terjangkau) dan jalankan binernya.
+      # sempat jalan). Workaround: download Gradle langsung via curl.
+      # services.gradle.org JUGA 504 dari runner (redirect-nya ke GitHub
+      # Releases), jadi pakai mirror Huawei — SHA256 diverifikasi sama
+      # dengan checksum resmi services.gradle.org
+      # (b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06).
       # Bila setup-gradle sudah pulih, boleh dikembalikan ke action.
       - name: Install Gradle 9.3.1 (direct download)
         run: |
-          curl -fsSL -o /tmp/gradle-9.3.1-bin.zip https://services.gradle.org/distributions/gradle-9.3.1-bin.zip
+          curl -fsSL -o /tmp/gradle-9.3.1-bin.zip https://mirrors.huaweicloud.com/gradle/gradle-9.3.1-bin.zip
+          echo "b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06  /tmp/gradle-9.3.1-bin.zip" | sha256sum -c -
           unzip -q /tmp/gradle-9.3.1-bin.zip -d /tmp
           echo "/tmp/gradle-9.3.1/bin" >> "$GITHUB_PATH"
           gradle --version
