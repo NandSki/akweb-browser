@@ -447,3 +447,24 @@ OFF = bank/kick tidak pernah dipertimbangkan di solveShotV2; (c) refreshOverlay
 pakai geometri saja (noSim=true); (d) matchBaru reset state pemblokir + retry
 autoDetect 3x (jeda 1.5 detik). Diverifikasi Steel: AKV2 object, 0 error.
 File: solver-extension/solver.js + assets/solver/*.user.js → v2.41.
+
+## Update 2026-11-08 (v2.42 — FIX BREAK LOOP + bola hantu, dari LIVE TEST Steel)
+Live test v2.41 (2 match guest, Steel 2026-11-08 10:55-11:10): AKV2 OK, 0 error,
+deteksi 16 bola, garis + pocket muncul, PANTUL OFF dipegang, fix v2.41 (tolak
+tembakan tidak tervalidasi) terbukti jalan. TAPI:
+1. BREAK LOOP: 5x break dalam 9 menit, 0 masuk, tidak pernah sampai tembakan
+   normal. isBreakShot cuma cek jumlah bola >=15; break yang tidak memasukkan
+   bola (16 bola tetap) dianggap "masih break". S.breakDone sudah ada tapi
+   tidak pernah dicek di shootNext. Prediksi break sim meleset (sim 1-2 masuk,
+   realita 0/4).
+2. Bola hantu: 5 bola terbaca di x=155 (di luar bantalan 130.8) — bola yang
+   sudah masuk tetap terbaca stale dari pointer array.
+Fix v2.42: (a) isBreakShot wajib formasi rack (bounding box bola objek <70);
+(b) shootNext: break hanya kalau !S.breakDone (sekali per match); (c)
+findBreakShot: lurus ke kepala rack power MAX, tanpa scan 72 sudut (prediksi
+sim break tidak bisa diandalkan); (d) readPointerBalls/readLearnedBalls buang
+bacaan di luar meja (|x|>140 atau |y|>80). Logika break dites di Node (rack
+→ true, meja acak → false, sudut break 90° ke bola 1). Load test Steel: AKV2
+object, 0 error. File: solver-extension/solver.js + assets/solver/*.user.js → v2.42.
+Keterbatasan rig (bukan bug solver): popup "Create an account" muncul ~2-3
+menit setelah login guest dan X-nya tidak bisa ditutup via CDP di Steel.

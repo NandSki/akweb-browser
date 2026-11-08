@@ -1,4 +1,4 @@
-var AKV2_VERSION = '2.41';
+var AKV2_VERSION = '2.42';
 (function () {
   'use strict';
   function pageCode() {
@@ -1204,52 +1204,53 @@ var AKV2_VERSION = '2.41';
     // pilih sudut yang masukin bola TERBANYAK (tanpa scratch, tanpa 8).
     // Break BUTUH power keras (beda dengan tembakan biasa yang lembut dulu).
     function isBreakShot(balls) {
-      return balls && balls.length >= 15;
+      // v2.42: dulu cuma jumlah bola >=15 → break yang tidak memasukkan bola
+      // (16 bola tetap di meja) dianggap "masih break" → ngebreak LAGI ke meja
+      // yang sudah acak, 5x dalam 9 menit, 0 masuk (BREAK LOOP, terbukti live
+      // Steel 2026-11-08). Sekarang: break HANYA kalau bola masih dalam
+      // formasi rack (segitiga rapat, bounding box <70 di kedua sumbu).
+      if (!balls || balls.length < 15) return false;
+      var mnx = 1e9, mxx = -1e9, mny = 1e9, mxy = -1e9, n = 0;
+      for (var i = 0; i < balls.length; i++) {
+        if (balls[i].num === 0 || balls[i].cue) continue; // cue bukan bagian rack
+        n++;
+        if (balls[i].x < mnx) mnx = balls[i].x;
+        if (balls[i].x > mxx) mxx = balls[i].x;
+        if (balls[i].y < mny) mny = balls[i].y;
+        if (balls[i].y > mxy) mxy = balls[i].y;
+      }
+      if (n < 14) return false;
+      return (mxx - mnx) < 70 && (mxy - mny) < 70;
     }
     function findBreakShot(balls, R) {
+      // v2.42: break LANGSUNG ke kepala rack (bola terdepan segitiga), power
+      // MAX, tanpa scan 72 sudut. Scan lama memilih sudut dari prediksi sim —
+      // tapi prediksi break sim meleset (sim bilang 1-2 masuk, realita 0/4 di
+      // live test 2026-11-08) → sudut rapuh yang cuma bagus di sim. Break
+      // tengah lurus ke kepala rack adalah teknik standar yang paling bisa
+      // diandalkan di meja sungguhan.
       var cue = null, cueIdx = -1;
       for (var i = 0; i < balls.length; i++) {
         if (balls[i].num === 0 || balls[i].cue) { cue = balls[i]; cueIdx = i; break; }
       }
       if (!cue) { try { log('💥 BREAK: bola putih tidak ketemu'); } catch (e) {} return null; }
-      var sim = null;
-      try { sim = new PoolSim(); } catch (e2) { return null; }
+      // Kepala rack = bola objek terdekat dari cue (ujung segitiga).
+      var head = null, headIdx = -1, bestD = Infinity;
+      for (var j = 0; j < balls.length; j++) {
+        if (j === cueIdx) continue;
+        var d = Math.hypot(balls[j].x - cue.x, balls[j].y - cue.y);
+        if (d < bestD) { bestD = d; head = balls[j]; headIdx = j; }
+      }
+      if (!head) { try { log('💥 BREAK: kepala rack tidak ketemu'); } catch (e2) {} return null; }
+      var dx = head.x - cue.x, dy = head.y - cue.y, dl = Math.hypot(dx, dy) || 1;
+      dx /= dl; dy /= dl;
+      // Ghost ball nyata: titik tumbukan dead-center di kepala rack.
+      var gx = head.x - dx * R * 2, gy = head.y - dy * R * 2;
       var mx = S.cueMaxPower || 666;
-      var spin = { x: 0, y: 0 }; // break tanpa spin (lurus maksimal)
-      var best = null, bestScore = Infinity, checked = 0;
-      try { log('💥 BREAK: scan 72 sudut di power MAX...'); } catch (e3) {}
-      for (var deg = 0; deg < 360; deg += 5) {
-        var angle = deg * Math.PI / 180;
-        var simBalls = balls.map(function (b, bi) {
-          var n = (bi === cueIdx) ? 0 : (b.num === null || b.num === undefined ? -1 : b.num);
-          return { x: b.x, y: b.y, number: n, state: 1 };
-        });
-        var res = null;
-        try { res = sim.simulate({ balls: simBalls, shotAngle: angle, shotPower: mx, shotSpin: spin }); }
-        catch (e4) { continue; }
-        checked++;
-        if (res.cueScratched) continue; // scratch = tolak
-        if (res.pocketedNumbers.indexOf(8) >= 0) continue; // 8 masuk = tolak
-        var potted = res.pocketedNumbers.filter(function (n) { return n !== 0; }).length;
-        if (potted === 0) continue; // tidak ada yang masuk = tolak
-        // Skor ala Arab: -1000 per bola masuk (makin banyak makin bagus).
-        var score = -potted * 1000;
-        if (score < bestScore) {
-          bestScore = score;
-          // Ghost = titik 50 unit di arah tembakan (untuk aim di shootLast).
-          var gx = cue.x + Math.cos(angle) * 50, gy = cue.y + Math.sin(angle) * 50;
-          // power UI = 85 (MAX), simPower = mx (666). Break BUTUH keras!
-          best = { angle: angle, power: 85, simPower: mx, res: res, potted: potted,
-                   targetIdx: cueIdx, ghost: [gx, gy], pocket: { x: gx, y: gy },
-                   simRes: res, validated: true, isBreak: true };
-        }
-      }
-      if (best) {
-        try { log('💥 BREAK: sudut terbaik ' + (best.angle * 180 / Math.PI).toFixed(1) + '° masukin ' + best.potted + ' bola (dari ' + checked + ' sudut dicek)'); } catch (e5) {}
-      } else {
-        try { log('💥 BREAK: tidak ada sudut bagus, tembak lurus ke rack'); } catch (e6) {}
-      }
-      return best;
+      try { log('💥 BREAK: lurus ke kepala rack (bola ' + head.num + ') sudut ' + (Math.atan2(dy, dx) * 180 / Math.PI).toFixed(1) + '° power MAX'); } catch (e3) {}
+      return { angle: Math.atan2(dy, dx), power: 85, simPower: mx, res: null, potted: 0,
+               targetIdx: headIdx, ghost: [gx, gy], pocket: { x: head.x, y: head.y },
+               simRes: null, validated: true, isBreak: true };
     }
     function ballsMoved(a, b, thr) {
       if (!a || !b || a.length !== b.length) return true;
@@ -1802,7 +1803,7 @@ var AKV2_VERSION = '2.41';
         var e = learned[i], idx = e.idx;
         if (idx + 1 >= f64.length) { missing.push(e.num); continue; }
         var x = f64[idx], y = f64[idx + 1];
-        if (!isFinite(x) || !isFinite(y) || x < -200 || x > 200 || y < -160 || y > 160) { missing.push(e.num); continue; }
+        if (!isFinite(x) || !isFinite(y) || x < -140 || x > 140 || y < -80 || y > 80) { missing.push(e.num); continue; } // v2.42: buang bola hantu di luar meja (lihat readPointerBalls)
         if (numberDelta !== null && numberDelta !== undefined) {
           var ii = 2 * idx + numberDelta;
           if (ii < 0 || ii >= i32.length || i32[ii] !== e.num) { missing.push(e.num); continue; }
@@ -1881,7 +1882,7 @@ var AKV2_VERSION = '2.41';
       p.id = 'akv2';
       p.style.cssText = 'position:fixed;top:68px;right:8px;z-index:2147483000;touch-action:manipulation;-webkit-tap-highlight-color:transparent;width:300px;max-height:92vh;overflow-y:auto;background:#FFF6E5;color:#111;font:bold 13px Arial,sans-serif;padding:10px;border:3px solid #111;border-radius:12px;box-shadow:4px 4px 0 #111;box-sizing:border-box';
       p.innerHTML =
-        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.41</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">heap saja, tanpa deteksi canvas. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
+        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.42</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">heap saja, tanpa deteksi canvas. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
         '<button id="akv2LinePreview" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#E1BEE7;box-shadow:2px 2px 0 #111;margin-top:8px">🎯 LINE PREVIEW: ON</button>' +
         '<button id="akv2AutoplayBtn" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#59D977;box-shadow:2px 2px 0 #111;margin-top:6px">▶️ AUTO PLAY: OFF</button>' +
         '<button id="akv2MatchBaru" style="width:100%;min-height:46px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF9800;color:#fff;box-shadow:2px 2px 0 #111;margin-top:6px">🔄 MATCH BARU</button>' +
@@ -3436,7 +3437,11 @@ var AKV2_VERSION = '2.41';
         if (!obj) { missing.push(num); continue; }
         var fi = obj / 8, ii = obj / 4;
         var x = h.f64[fi + 4], y = h.f64[fi + 5], radius = h.f64[fi + 10], nread = h.i32[ii + 31];
-        if (nread !== num || Math.abs(radius - 3.800475) > 0.000001 || !isFinite(x) || !isFinite(y) || x < -200 || x > 200 || y < -160 || y > 160) { missing.push(num); continue; }
+        // v2.42: buang bacaan di luar meja (|x|>140 atau |y|>80). Bola yang sudah
+        // masuk kadang tetap terbaca dari pointer array dengan posisi stale
+        // (live test: 5 bola di x=155, di luar bantalan 130.8) → bola hantu.
+        // Bola asli tidak pernah keluar dari meja (bantalan ±130.8/±72).
+        if (nread !== num || Math.abs(radius - 3.800475) > 0.000001 || !isFinite(x) || !isFinite(y) || x < -140 || x > 140 || y < -80 || y > 80) { missing.push(num); continue; }
         balls.push({ x: x, y: y, idx: fi, num: num, cue: (num === 0) });
       }
       if (balls.length < 6) return null;
@@ -3710,7 +3715,7 @@ var AKV2_VERSION = '2.41';
     async function shootNext(autoRes) {
       var shot = null;
       // v2.12: Pas BREAK (≥15 bola), WAJIB pakai auto-break ala Arab (scan sudut, power MAX).
-      if (isBreakShot(autoRes.balls)) {
+      if (isBreakShot(autoRes.balls) && !S.breakDone) {
         try { log('💥 BREAK terdeteksi (' + autoRes.balls.length + ' bola) — pakai AUTO-BREAK ala Arab'); } catch (eB) {}
         shot = findBreakShot(autoRes.balls, autoRes.radius);
         if (!shot) {
