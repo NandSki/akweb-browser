@@ -11,7 +11,12 @@ sys.path.insert(0, "/opt/muse/skills/custom-connector-setup/bin")
 from dynamic_credentials import add_surrogate_to_request
 
 API = "https://api.github.com"
-RUN_ID = 40743468559
+# v2.44: RUN_ID DULU HARDCODE 40743468559 (build kuno, masih ada akweb-extension)
+# → download_artifact.py salah ambil artefak lama. Sekarang wajib diisi dari argumen.
+RUN_ID = int(sys.argv[1]) if len(sys.argv) > 1 else None
+if not RUN_ID:
+    print("USAGE: download_artifact.py <run_id>  (lihat Actions runs, JANGAN pakai hardcoded id)")
+    sys.exit(2)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):

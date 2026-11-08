@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         8BP AKWeb Solver Gabungan v2.13 (Heap Only)
 // @namespace    nbp
-// @version      gabungan-v2.44
+// @version      gabungan-v2.45
 // @description  v2.39: FIX lag — scan heap cuma sekali, baca dari cache — cari pocket dari POLA (6 pasang simetris), tidak butuh tau nilainya dulu. Untuk game yang pocket-nya "pindah".
 // @match        https://prod-web-pool.miniclip.com/*
 // @match        https://*.pool.miniclippt.com/*
@@ -12,7 +12,7 @@
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
-var AKV2_VERSION = '2.44';
+var AKV2_VERSION = '2.45';
 (function () {
   'use strict';
   function pageCode() {
@@ -1944,7 +1944,7 @@ var AKV2_VERSION = '2.44';
       p.id = 'akv2';
       p.style.cssText = 'position:fixed;top:68px;right:8px;z-index:2147483000;touch-action:manipulation;-webkit-tap-highlight-color:transparent;width:300px;max-height:92vh;overflow-y:auto;background:#FFF6E5;color:#111;font:bold 13px Arial,sans-serif;padding:10px;border:3px solid #111;border-radius:12px;box-shadow:4px 4px 0 #111;box-sizing:border-box';
       p.innerHTML =
-        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.44</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">heap saja, tanpa deteksi canvas. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
+        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.45</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">heap saja, tanpa deteksi canvas. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
         '<button id="akv2LinePreview" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#E1BEE7;box-shadow:2px 2px 0 #111;margin-top:8px">🎯 LINE PREVIEW: ON</button>' +
         '<button id="akv2AutoplayBtn" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#59D977;box-shadow:2px 2px 0 #111;margin-top:6px">▶️ AUTO PLAY: OFF</button>' +
         '<button id="akv2MatchBaru" style="width:100%;min-height:46px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF9800;color:#fff;box-shadow:2px 2px 0 #111;margin-top:6px">🔄 MATCH BARU</button>' +
@@ -3676,6 +3676,10 @@ var AKV2_VERSION = '2.44';
         // 30), supaya deteksi match baru tidak terasa "stuck".
         var _cd = S.waitingNewMatch ? 5000 : 30000;
         if (S.lastAutoDetectFail && nowT - S.lastAutoDetectFail < _cd) return false;
+        // v2.45: THROTTLE scan heap — jangan scan berat lebih dari 1x/8 detik
+        // (scan berulang saat game loading/tutorial bisa bikin browser freeze/crash).
+        if (S.lastAutoDetectTry && nowT - S.lastAutoDetectTry < 8000) return false;
+        S.lastAutoDetectTry = nowT;
         try { log(tag + ': belum belajar, AUTO DETEKSI otomatis...'); await autoDetect(); if (!S.learned) S.lastAutoDetectFail = Date.now(); } finally { S.autoDetecting = false; }
         return true;
       }
@@ -3695,6 +3699,22 @@ var AKV2_VERSION = '2.44';
         return true;
       }
       S.staleCount = 0;
+      // v2.45: VALIDASI RACK — sebelum break, bola harusnya masih rack RAPAT
+      // (bounding box kecil). Kalau bola masih banyak (>=14) tapi kesebar
+      // (bbox >100) = array STALE, posisi bola ada "celah"/ngaco -> clear +
+      // deteksi ulang otomatis. (Sesudah break, kesebar itu normal.)
+      if (!S.breakDone && n >= 14) {
+        var _xs = [], _ys = [];
+        for (var _bi = 0; _bi < chk.balls.length; _bi++) { _xs.push(chk.balls[_bi].x); _ys.push(chk.balls[_bi].y); }
+        var _bx = Math.max.apply(null, _xs) - Math.min.apply(null, _xs);
+        var _by = Math.max.apply(null, _ys) - Math.min.apply(null, _ys);
+        if (_bx > 100 || _by > 100) {
+          log('⚠️ RACK NGANCO: ' + n + ' bola tapi bbox ' + _bx.toFixed(0) + 'x' + _by.toFixed(0) + ' (harusnya rack rapat <100) — array stale, deteksi ulang...');
+          clearLearned('⚠️ RACK NGANCO: posisi bola ada celah (array stale), deteksi ulang otomatis.');
+          try { await autoDetect(); if (!S.learned) S.lastAutoDetectFail = Date.now(); } finally { S.autoDetecting = false; }
+          return true;
+        }
+      }
       // v2.44: DETEKSI MENANG/KALAH — bola 8 hilang dari bacaan = match selesai.
       // (Dulu solver tidak tau match sudah selesai → nempel di data rack lama
       // → "stuck aneh" di match baru.) Butuh 2x baca berturut-turut supaya
@@ -3765,8 +3785,9 @@ var AKV2_VERSION = '2.44';
       // v2.38: skip kalau halaman belum selesai load (game masih loading → jangan scan heap)
       try { if (document.readyState !== 'complete') return; } catch (e) {}
       if (!S.deteksiOtomatis || S.autoBeruntun || S.shooting || S.linesFrozen) return;
-      if (await autoDetectCheck('DETEKSI OTOMATIS')) return;
-      await refreshOverlay();
+      // v2.45: guard — satu error di tick jangan matiin loop / freeze browser.
+      try { if (await autoDetectCheck('DETEKSI OTOMATIS')) return; } catch (eDT) { try { log('DETEKSI error: ' + eDT.message); } catch (eL) {} return; }
+      try { await refreshOverlay(); } catch (eRO) { try { log('OVERLAY error: ' + eRO.message); } catch (eL2) {} }
     }
     function stopFastTimer() { if (S.fastTimer) { clearInterval(S.fastTimer); S.fastTimer = null; } }
     function startFastTimer() {
@@ -4020,7 +4041,7 @@ var AKV2_VERSION = '2.44';
           if (!autoStableCheck(autoRes)) { startFastTimer(); return; }
           await shootNext(autoRes);
         }
-      } finally { S.ticking = false; }
+      } catch (eAT) { try { log('AUTOTICK error: ' + eAT.message); } catch (eL3) {} } finally { S.ticking = false; }
     }
     // v2.40: FIX scope — 3 fungsi grup PINDAH dari dalam buildPanel ke level
     // pageCode. Sebelumnya dideklarasi di dalam buildPanel (tutup kurungnya di
