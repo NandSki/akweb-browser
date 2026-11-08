@@ -30,7 +30,7 @@
     ],
     "description": "Injects the 8BP heap solver (Tampermonkey userscript, v2.39) into the game frames. Separate from the AKWeb extension; no native bridge.",
     "manifest_version": 2,
-    "name": "8BP Heap Solver v2.42",
+    "name": "8BP Heap Solver v2.43",
     "permissions": [
         "https://prod-web-pool.miniclip.com/*",
         "https://*.pool.miniclippt.com/*",
@@ -39,5 +39,5 @@
         "https://8ballpool.com/*",
         "https://www.8ballpool.com/*"
     ],
-    "version": "2.42"
+    "version": "2.43"
 }

@@ -468,3 +468,37 @@ bacaan di luar meja (|x|>140 atau |y|>80). Logika break dites di Node (rack
 object, 0 error. File: solver-extension/solver.js + assets/solver/*.user.js → v2.42.
 Keterbatasan rig (bukan bug solver): popup "Create an account" muncul ~2-3
 menit setelah login guest dan X-nya tidak bisa ditutup via CDP di Steel.
+
+## Update 2026-11-08 (v2.43 — bola tangan, beruntun, pantul fallback, tabrakan, pocket, bola masuk hilang, layout AKWeb)
+Keluhan user (11:13 WIB, setelah tes v2.41): "sama aja malah parah" — minta
+deteksi bola tangan, disiplin grup/beruntun, power/spin akurat, pantul hanya
+sebagai fallback, bola sering ketabrak (ukuran bola kurang besar), layout
+AKWeb (2 gambar cue di pinggir + penggaris), real-time, lubang kadang ga
+sesuai, bola masuk pocket auto-hilang dari layar.
+Fix v2.43:
+1. TABRAKAN (root cause): pathClear pakai clearance R*2-2 (=5.6) padahal 2 bola
+   bersentuhan kalau jarak pusat <2R (=7.6) → solver ngira jalur bersih
+   padahal bola kesenggol. Sekarang R*2+1.5 (=9.1, sama dengan checkClearPaths).
+   Ghost check juga R*2-2 → R*2+1.
+2. BOLA TANGAN: baca state bola obj+116 (0=diangkat, 1=aktif, 4=masuk pocket).
+   Kalau cue state 0 → S.cueInHand, autoplay geser putih otomatis ke posisi
+   terbaik (di garis bidik target termudah, 45 unit di belakang ghost) pakai
+   drag yang sama seperti shootLast, max 1x/5 detik; kalau masih bola tangan,
+   jangan tembak (tunggu penempatan manual).
+3. BOLA MASUK HILANG: bola state 4 (potted) dibuang dari readPointerBalls →
+   tidak ada lagi bola hantu/menumpuk di layar.
+4. PANTUL FALLBACK (dua fase): fase 1 tembakan langsung dulu; fase 2 baru
+   coba pantul kalau tidak ada tembakan langsung yang valid. Tombol PANTUL
+   sekarang default FALLBACK (dulu OFF).
+5. BERUNTUN (position play): solveShotV2 kasih penalti jarak — pilih tembakan
+   yang meninggalkan putih DEKAT bola grup berikutnya (skor += jarak*0.15).
+6. POCKET VALIDASI: hasil deteksi heap ditolak kalau menyimpang >8 unit dari
+   pola (±130.8,±67.3)/(0,±72) — obat "lubang kadang sesuai kadang ga".
+7. LAYOUT AKWEB (gambar asli dari akweb-extension_0_cxvn.zip, ui/assets):
+   power bar kiri (frame+feedback+ruler+stik meluncur ke bawah sejauh power)
+   + aim wheel kanan (batang+ruler+shadow), posisi dari pocket (tinggi 2/3
+   meja), update real-time mengikuti garis (updateBars di drawShot). Gambar
+   di-embed base64 (~37KB). File aset: goals/.../files/akweb-assets/.
+Load test Steel: AKV2 object, 0 error. File: solver-extension/solver.js +
+assets/solver/*.user.js → v2.43. Verifikasi visual bar (di match sungguhan)
+masih menunggu live test.
