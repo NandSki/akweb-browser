@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         8BP AKWeb Solver Gabungan v2.13 (Heap Only)
 // @namespace    nbp
-// @version      gabungan-v2.45
+// @version      gabungan-v2.46
 // @description  v2.39: FIX lag — scan heap cuma sekali, baca dari cache — cari pocket dari POLA (6 pasang simetris), tidak butuh tau nilainya dulu. Untuk game yang pocket-nya "pindah".
 // @match        https://prod-web-pool.miniclip.com/*
 // @match        https://*.pool.miniclippt.com/*
@@ -12,7 +12,7 @@
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
-var AKV2_VERSION = '2.45';
+var AKV2_VERSION = '2.46';
 (function () {
   'use strict';
   function pageCode() {
@@ -1895,6 +1895,10 @@ var AKV2_VERSION = '2.45';
       cushLearn: null,
       // v2.10: flag break — bola masuk pas break TIDAK menentukan grup
       breakDone: false,
+      // v2.46: flag validasi rack — validasi rack cuma boleh memicu deteksi
+      // ulang 1x per meja. Kalau posisi MASIH kesebar sesudah deteksi ulang =
+      // break sudah terjadi (bukan array stale) -> breakDone=true, loop berhenti.
+      rackValidated: false,
       // v2.16: LINE BEKU — garis diam sampai bola berhenti, baru clear + gambar baru
       linesFrozen: false,
       // v2.16: AIM MANUAL — line prediksi ngikutin arah jari (tembak manual)
@@ -1944,7 +1948,7 @@ var AKV2_VERSION = '2.45';
       p.id = 'akv2';
       p.style.cssText = 'position:fixed;top:68px;right:8px;z-index:2147483000;touch-action:manipulation;-webkit-tap-highlight-color:transparent;width:300px;max-height:92vh;overflow-y:auto;background:#FFF6E5;color:#111;font:bold 13px Arial,sans-serif;padding:10px;border:3px solid #111;border-radius:12px;box-shadow:4px 4px 0 #111;box-sizing:border-box';
       p.innerHTML =
-        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.45</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">heap saja, tanpa deteksi canvas. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
+        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.46</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">heap saja, tanpa deteksi canvas. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
         '<button id="akv2LinePreview" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#E1BEE7;box-shadow:2px 2px 0 #111;margin-top:8px">🎯 LINE PREVIEW: ON</button>' +
         '<button id="akv2AutoplayBtn" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#59D977;box-shadow:2px 2px 0 #111;margin-top:6px">▶️ AUTO PLAY: OFF</button>' +
         '<button id="akv2MatchBaru" style="width:100%;min-height:46px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF9800;color:#fff;box-shadow:2px 2px 0 #111;margin-top:6px">🔄 MATCH BARU</button>' +
@@ -3626,7 +3630,7 @@ var AKV2_VERSION = '2.45';
       S.learned = null; S.autoLastBalls = null; S.autoStableCount = 0; S.staleCount = 0;
       if (S.group) { try { log('GRUP di-reset (match baru): ' + S.group + ' -> ANY'); } catch (eG) {} }
       S.group = null; try { updateGroupBtn(); } catch (eGB) {}
-      S.breakDone = false; S.oppStartBalls = null;
+      S.breakDone = false; S.rackValidated = false; S.oppStartBalls = null;
       S.waitChange = false; S.waitChangeBalls = null; S.waitChangeSince = 0;
       S.autoWaiting = false; S.oppWait = false; S.oppMoved = false; S.oppWaitStart = 0; S.oppLastBalls = null;
       S.shooting = false; S.linesFrozen = false;
@@ -3691,6 +3695,11 @@ var AKV2_VERSION = '2.45';
         // clear + scan ulang. Sebelum itu, DIAM aja (baca dari cache tetap jalan).
         S.staleCount = (S.staleCount || 0) + 1;
         if (S.staleCount >= 3) {
+          // v2.46: throttle — jalur ini juga bisa loop (endgame / baca gagal
+          // terus) -> scan berat max 1x/8 detik, sama seperti jalur lain.
+          var _nowST = Date.now();
+          if (S.lastAutoDetectTry && _nowST - S.lastAutoDetectTry < 8000) return true;
+          S.lastAutoDetectTry = _nowST;
           clearLearned(tag + ': match selesai / meja kosong terdeteksi, state lama di-clear.');
           try { log(tag + ': DETEKSI ULANG otomatis...'); await autoDetect(); } finally { S.autoDetecting = false; }
         } else {
@@ -3703,15 +3712,59 @@ var AKV2_VERSION = '2.45';
       // (bounding box kecil). Kalau bola masih banyak (>=14) tapi kesebar
       // (bbox >100) = array STALE, posisi bola ada "celah"/ngaco -> clear +
       // deteksi ulang otomatis. (Sesudah break, kesebar itu normal.)
+      // v2.46: FIX LOOP FREEZE — validasi ini dulu menembak TIAP TICK sesudah
+      // break MANUAL / tutorial auto-break / break lawan, karena breakDone
+      // cuma jadi true kalau SOLVER sendiri yang break, sementara
+      // clearLearned me-reset breakDone=false dan autoDetect TIDAK pernah
+      // menyetel breakDone. Akibatnya scan heap berat jalan tiap 1-3 detik
+      // selamanya -> game freeze ("ga bisa gerak"). Sekarang: validasi cuma
+      // 1x per meja. Sesudah deteksi ulang langsung dicek: posisi MASIH
+      // kesebar = break SUDAH terjadi (bukan array stale) -> breakDone=true,
+      // loop berhenti. Posisi RAPAT = array stale sudah diperbaiki, flag
+      // di-reset. Plus throttle 8 detik di jalur ini.
       if (!S.breakDone && n >= 14) {
         var _xs = [], _ys = [];
-        for (var _bi = 0; _bi < chk.balls.length; _bi++) { _xs.push(chk.balls[_bi].x); _ys.push(chk.balls[_bi].y); }
+        // v2.46: bbox dari BOLA OBJEK saja (tanpa putih) — putih di x≈-100,
+        // rack di x≈+90..+130, jadi kalau putih ikut dihitung bbox selalu
+        // 227x109 walau rack rapat sempurna (temuan Steel crash-v245).
+        for (var _bi = 0; _bi < chk.balls.length; _bi++) { if (chk.balls[_bi].num === 0) continue; _xs.push(chk.balls[_bi].x); _ys.push(chk.balls[_bi].y); }
         var _bx = Math.max.apply(null, _xs) - Math.min.apply(null, _xs);
         var _by = Math.max.apply(null, _ys) - Math.min.apply(null, _ys);
         if (_bx > 100 || _by > 100) {
+          if (S.rackValidated) {
+            // Pengaman: validasi menembak kedua kalinya padahal sudah pernah
+            // deteksi ulang -> ini meja pasca-break, bukan array stale.
+            log('✅ RACK kesebar TERKONFIRMASI pasca-break (bukan array stale) — breakDone=true, lanjut main.');
+            S.breakDone = true; S.rackValidated = false;
+            return false;
+          }
+          var _nowRV = Date.now();
+          if (S.lastAutoDetectTry && _nowRV - S.lastAutoDetectTry < 8000) return true;
+          S.lastAutoDetectTry = _nowRV;
           log('⚠️ RACK NGANCO: ' + n + ' bola tapi bbox ' + _bx.toFixed(0) + 'x' + _by.toFixed(0) + ' (harusnya rack rapat <100) — array stale, deteksi ulang...');
           clearLearned('⚠️ RACK NGANCO: posisi bola ada celah (array stale), deteksi ulang otomatis.');
+          S.rackValidated = true; // set SESUDAH clearLearned (resetMatchState menghapus flag)
           try { await autoDetect(); if (!S.learned) S.lastAutoDetectFail = Date.now(); } finally { S.autoDetecting = false; }
+          // Cek hasil deteksi ulang: masih kesebar = break sudah terjadi.
+          try {
+            var _chk2 = readAuto();
+            if (_chk2 && _chk2.balls && _chk2.balls.length >= 14) {
+              var _xs2 = [], _ys2 = [];
+              // v2.46: sama — bola objek saja, tanpa putih.
+              for (var _b2 = 0; _b2 < _chk2.balls.length; _b2++) { if (_chk2.balls[_b2].num === 0) continue; _xs2.push(_chk2.balls[_b2].x); _ys2.push(_chk2.balls[_b2].y); }
+              var _bx2 = Math.max.apply(null, _xs2) - Math.min.apply(null, _xs2);
+              var _by2 = Math.max.apply(null, _ys2) - Math.min.apply(null, _ys2);
+              if (_bx2 > 100 || _by2 > 100) {
+                S.breakDone = true; S.rackValidated = false;
+                log('✅ RACK kesebar TERKONFIRMASI pasca-break (bukan array stale) — breakDone=true.');
+              } else {
+                S.rackValidated = false; // rack rapat = array stale sudah diperbaiki
+              }
+            }
+            // Kalau hasil baca tidak bisa dipastikan (<14 bola / null), flag
+            // DIBIARKAN true — pengaman di atas akan menyetel breakDone
+            // pada penembakan validasi berikutnya, jadi loop tetap berhenti.
+          } catch (eRV) { /* flag dibiarkan, pengaman yang menangani */ }
           return true;
         }
       }
