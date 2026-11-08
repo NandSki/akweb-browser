@@ -409,3 +409,20 @@ Alternatif (jika mau satu branch utama): push sebagai subfolder
    plan sendiri (pekerjaan reverse-engineering terpisah, bukan bagian
    proyek ini) atau kembali memakai APK AKWeb asli. Proyek ini tidak
    mengklaim langkah itu sudah selesai.
+
+## Update 2026-11-08 (v2.40 — FIX scope, ROOT CAUSE menu mati)
+Diagnosis (reproduksi Steel 2026-11-08): solver v2.39 (master + salinan APK)
+mati total saat init() — error `Uncaught ReferenceError: updateGroupBtn is
+not defined`. Penyebab: `updateGroupBtn`, `autoDetectGroup`,
+`autoDetectGroupFromOpp` dideklarasi DI DALAM `buildPanel` (tutup kurungnya
+baru di baris ~2343), sehingga `init()` / `clearLearned()` / `matchBaru()`
+tidak bisa melihat mereka. init() mati → AKV2 undefined, interval tidak
+start, tidak ada garis. Bug masuk antara v2.31→v2.35 saat init() mulai
+memanggil updateGroupBtn(). Panel tetap kebangun (buildPanel jalan duluan)
+dengan stat mentok "Menunggu game..." — itu gejala khasnya.
+Fix v2.40: 3 fungsi dipindah keluar dari buildPanel ke level pageCode
+(sebelum `function init()`). Diverifikasi live di Steel (prod-web-pool):
+AKV2 object, stat "Module ketemu, heap 838860800 byte", 0 error — untuk
+master v2.40 DAN salinan APK (yang tetap pakai gating ownModule).
+File: solver-extension/solver.js + assets/solver/*.user.js → v2.40;
+manifest solver-extension version 2.40.

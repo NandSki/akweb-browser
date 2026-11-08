@@ -1,4 +1,4 @@
-var AKV2_VERSION = '2.39';
+var AKV2_VERSION = '2.40';
 (function () {
   'use strict';
   function pageCode() {
@@ -1873,7 +1873,7 @@ var AKV2_VERSION = '2.39';
       p.id = 'akv2';
       p.style.cssText = 'position:fixed;top:68px;right:8px;z-index:2147483000;touch-action:manipulation;-webkit-tap-highlight-color:transparent;width:300px;max-height:92vh;overflow-y:auto;background:#FFF6E5;color:#111;font:bold 13px Arial,sans-serif;padding:10px;border:3px solid #111;border-radius:12px;box-shadow:4px 4px 0 #111;box-sizing:border-box';
       p.innerHTML =
-        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.39</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">heap saja, tanpa deteksi canvas. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
+        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.40</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">heap saja, tanpa deteksi canvas. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
         '<button id="akv2LinePreview" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#E1BEE7;box-shadow:2px 2px 0 #111;margin-top:8px">🎯 LINE PREVIEW: ON</button>' +
         '<button id="akv2AutoplayBtn" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#59D977;box-shadow:2px 2px 0 #111;margin-top:6px">▶️ AUTO PLAY: OFF</button>' +
         '<button id="akv2MatchBaru" style="width:100%;min-height:46px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF9800;color:#fff;box-shadow:2px 2px 0 #111;margin-top:6px">🔄 MATCH BARU</button>' +
@@ -2151,62 +2151,6 @@ var AKV2_VERSION = '2.39';
       var m8 = $('akv2Mode8'), m9 = $('akv2Mode9');
       if (m8) m8.addEventListener('click', function () { setGameMode('8'); });
       if (m9) m9.addEventListener('click', function () { setGameMode('9'); });
-    // v2.9: Update tampilan tombol grup (highlight yang aktif).
-    // Klasifikasi ala Arab: 1=SOLID (polos 1-7), 2=STRIPE (garis 9-15), null=ANY (buka).
-    function updateGroupBtn() {
-      try {
-        var bp = $('akv2Polos'), bg = $('akv2Garis'), bb = $('akv2Buka');
-        if (bp) bp.style.background = (S.group === 'solid') ? '#7FD4FF' : '#fff';
-        if (bg) bg.style.background = (S.group === 'stripe') ? '#7FD4FF' : '#fff';
-        if (bb) bb.style.background = (!S.group) ? '#7FD4FF' : '#fff';
-      } catch (e) {}
-    }
-    // v2.9: AUTO-DETEKSI GRUP dari bola pertama yang masuk.
-    // Aturan 8-ball: bola pertama yang masuk setelah break menentukan grup.
-    // 1-7 = SOLID (polos), 9-15 = STRIPE (garis). Dipanggil setelah tembakan kita.
-    // v2.10: Bola masuk PAS BREAK tidak menentukan grup (meja tetap terbuka).
-    function autoDetectGroup(pottedNums, wasBreak) {
-      if (S.group) return; // sudah ada grup, jangan ubah
-      if (wasBreak) {
-        log('🎱 BREAK: bola masuk diabaikan untuk grup (meja masih terbuka).');
-        return;
-      }
-      if (!pottedNums || !pottedNums.length) return;
-      for (var i = 0; i < pottedNums.length; i++) {
-        var n = pottedNums[i];
-        if (n >= 1 && n <= 7) {
-          S.group = 'solid'; updateGroupBtn();
-          log('🎱 GRUP OTOMATIS: POLOS 1-7 (bola ' + n + ' masuk pertama setelah break)');
-          return;
-        } else if (n >= 9 && n <= 15) {
-          S.group = 'stripe'; updateGroupBtn();
-          log('🎱 GRUP OTOMATIS: GARIS 9-15 (bola ' + n + ' masuk pertama setelah break)');
-          return;
-        }
-      }
-      // Hanya bola 8 atau cue yang masuk -> grup tetap ANY.
-    }
-    // v2.10: Deteksi grup dari tembakan LAWAN. Kalau lawan masukin polos (1-7),
-    // berarti kita GARIS (9-15), dan sebaliknya.
-    function autoDetectGroupFromOpp(preBalls, postBalls) {
-      if (S.group) return;
-      if (!preBalls || !postBalls) return;
-      var postNums = {};
-      postBalls.forEach(function (b) { postNums[b.num] = 1; });
-      for (var i = 0; i < preBalls.length; i++) {
-        var n = preBalls[i].num;
-        if (postNums[n]) continue; // masih ada
-        if (n >= 1 && n <= 7) {
-          S.group = 'stripe'; updateGroupBtn();
-          log('🎱 GRUP OTOMATIS: GARIS 9-15 (lawan masukin polos ' + n + ')');
-          return;
-        } else if (n >= 9 && n <= 15) {
-          S.group = 'solid'; updateGroupBtn();
-          log('🎱 GRUP OTOMATIS: POLOS 1-7 (lawan masukin garis ' + n + ')');
-          return;
-        }
-      }
-    }
       $('akv2Bank').addEventListener('click', function () {
         S.allowBank = !S.allowBank;
         $('akv2Bank').textContent = 'PANTUL: ' + (S.allowBank ? 'ON' : 'OFF');
@@ -3898,6 +3842,66 @@ var AKV2_VERSION = '2.39';
         }
       } finally { S.ticking = false; }
     }
+    // v2.40: FIX scope — 3 fungsi grup PINDAH dari dalam buildPanel ke level
+    // pageCode (lihat master v2.40). Sebelumnya init() mati dengan ReferenceError
+    // 'updateGroupBtn is not defined' → tidak ada panel hidup/garis/AKV2.
+    // v2.9: Update tampilan tombol grup (highlight yang aktif).
+    // Klasifikasi ala Arab: 1=SOLID (polos 1-7), 2=STRIPE (garis 9-15), null=ANY (buka).
+    function updateGroupBtn() {
+      try {
+        var bp = $('akv2Polos'), bg = $('akv2Garis'), bb = $('akv2Buka');
+        if (bp) bp.style.background = (S.group === 'solid') ? '#7FD4FF' : '#fff';
+        if (bg) bg.style.background = (S.group === 'stripe') ? '#7FD4FF' : '#fff';
+        if (bb) bb.style.background = (!S.group) ? '#7FD4FF' : '#fff';
+      } catch (e) {}
+    }
+    // v2.9: AUTO-DETEKSI GRUP dari bola pertama yang masuk.
+    // Aturan 8-ball: bola pertama yang masuk setelah break menentukan grup.
+    // 1-7 = SOLID (polos), 9-15 = STRIPE (garis). Dipanggil setelah tembakan kita.
+    // v2.10: Bola masuk PAS BREAK tidak menentukan grup (meja tetap terbuka).
+    function autoDetectGroup(pottedNums, wasBreak) {
+      if (S.group) return; // sudah ada grup, jangan ubah
+      if (wasBreak) {
+        log('🎱 BREAK: bola masuk diabaikan untuk grup (meja masih terbuka).');
+        return;
+      }
+      if (!pottedNums || !pottedNums.length) return;
+      for (var i = 0; i < pottedNums.length; i++) {
+        var n = pottedNums[i];
+        if (n >= 1 && n <= 7) {
+          S.group = 'solid'; updateGroupBtn();
+          log('🎱 GRUP OTOMATIS: POLOS 1-7 (bola ' + n + ' masuk pertama setelah break)');
+          return;
+        } else if (n >= 9 && n <= 15) {
+          S.group = 'stripe'; updateGroupBtn();
+          log('🎱 GRUP OTOMATIS: GARIS 9-15 (bola ' + n + ' masuk pertama setelah break)');
+          return;
+        }
+      }
+      // Hanya bola 8 atau cue yang masuk -> grup tetap ANY.
+    }
+    // v2.10: Deteksi grup dari tembakan LAWAN. Kalau lawan masukin polos (1-7),
+    // berarti kita GARIS (9-15), dan sebaliknya.
+    function autoDetectGroupFromOpp(preBalls, postBalls) {
+      if (S.group) return;
+      if (!preBalls || !postBalls) return;
+      var postNums = {};
+      postBalls.forEach(function (b) { postNums[b.num] = 1; });
+      for (var i = 0; i < preBalls.length; i++) {
+        var n = preBalls[i].num;
+        if (postNums[n]) continue; // masih ada
+        if (n >= 1 && n <= 7) {
+          S.group = 'stripe'; updateGroupBtn();
+          log('🎱 GRUP OTOMATIS: GARIS 9-15 (lawan masukin polos ' + n + ')');
+          return;
+        } else if (n >= 9 && n <= 15) {
+          S.group = 'solid'; updateGroupBtn();
+          log('🎱 GRUP OTOMATIS: POLOS 1-7 (lawan masukin garis ' + n + ')');
+          return;
+        }
+      }
+    }
+
     function init() {
       // APK/Gecko 2026-11-07: panel HANYA di frame yang punya Module SENDIRI.
       // Content script jalan di SEMUA frame (all_frames) — dulu buildPanel()
