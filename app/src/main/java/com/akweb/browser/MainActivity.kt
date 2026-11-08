@@ -263,8 +263,16 @@ class MainActivity : Activity() {
                         DebugLog.append(text)
                     }
                     bridgeDelegate = delegate
-                    extension.setMessageDelegate(delegate, BridgeDelegate.NATIVE_APP)
-                    DebugLog.append("BRIDGE: delegate terdaftar (${BridgeDelegate.NATIVE_APP})")
+                    // `extension` di callback accept ini nullable
+                    // (WebExtension?) — compiler menolak pemanggilan
+                    // langsung, jadi cek null dulu.
+                    val ext = extension
+                    if (ext != null) {
+                        ext.setMessageDelegate(delegate, BridgeDelegate.NATIVE_APP)
+                        DebugLog.append("BRIDGE: delegate terdaftar (${BridgeDelegate.NATIVE_APP})")
+                    } else {
+                        DebugLog.append("BRIDGE GAGAL daftar delegate: extension null")
+                    }
                 } catch (e: Exception) {
                     DebugLog.append("BRIDGE GAGAL daftar delegate: ${e.message}")
                 }
