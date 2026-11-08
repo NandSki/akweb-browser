@@ -426,3 +426,24 @@ AKV2 object, stat "Module ketemu, heap 838860800 byte", 0 error — untuk
 master v2.40 DAN salinan APK (yang tetap pakai gating ownModule).
 File: solver-extension/solver.js + assets/solver/*.user.js → v2.40;
 manifest solver-extension version 2.40.
+
+## Update 2026-11-08 (v2.41 — anti pantul ngasal, match baru, anti patah-patah)
+Keluhan user: in game patah2/crash, autoplay work tapi ga akurat, tembakan
+langsung bisa masuk malah jadi pantul ga jelas (bikin kalah), MATCH BARU ga work.
+Akar masalah (dari baca kode):
+1. pickShot: fallback geometri dikasih `validated = true` (baris 1801) → kalau
+   sim menolak SEMUA tembakan, autoplay tetap menembak yang geometri terbaik
+   TANPA validasi. Itu sumber "pantul ga jelas bikin kalah". Sama untuk
+   fallback simRusak (cands[0].validated = true).
+2. matchBaru(): tidak reset cooldown deteksi 30 detik (lastAutoDetectFail) dan
+   flag tunggu match lama (waitChange/autoWaiting/oppWait) → deteksi ulang
+   ke-block. Sekali autoDetect gagal, user harus nunggu 30 detik.
+3. refreshOverlay (tiap 3 detik, autoplay OFF): menjalankan pickShot LENGKAP
+   dengan sim (3 kandidat x ~12 power x robustness = ratusan sim fisika)
+   cuma untuk gambar garis display → blokir main thread → patah-patah.
+Fix v2.41: (a) fallback geometri & simRusak TIDAK lagi diberi validated
+(garis tetap tampil, autoplay tidak menembak tanpa validasi sim); (b) PANTUL
+OFF = bank/kick tidak pernah dipertimbangkan di solveShotV2; (c) refreshOverlay
+pakai geometri saja (noSim=true); (d) matchBaru reset state pemblokir + retry
+autoDetect 3x (jeda 1.5 detik). Diverifikasi Steel: AKV2 object, 0 error.
+File: solver-extension/solver.js + assets/solver/*.user.js → v2.41.

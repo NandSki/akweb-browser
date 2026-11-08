@@ -1,4 +1,4 @@
-var AKV2_VERSION = '2.40';
+var AKV2_VERSION = '2.41';
 (function () {
   'use strict';
   function pageCode() {
@@ -1710,6 +1710,9 @@ var AKV2_VERSION = '2.40';
       var spin = { x: (S.spinX || 0) * (S.cueSpinMult || 1), y: (S.spinY || 0) * (S.cueSpinMult || 1) };
       var mx = S.cueMaxPower || 666;
       var top = cands.slice(0, 3), best = null, bestScore = Infinity, simRusak = false;
+      // v2.41: PANTUL OFF = jangan pernah pertimbangkan bank/kick, walau lolos sim.
+      if (!allowBank) top = top.filter(function (c) { return !c.bank && !c.kick; });
+      if (!top.length) return null;
       for (_i = 0; _i < top.length; _i++) {
         var c = top[_i];
         var targetNum = balls[c.targetIdx].num;
@@ -1757,7 +1760,7 @@ var AKV2_VERSION = '2.40';
         }
         // kandidat yang tidak lolos di semua power -> DITOLAK (tidak ditembak)
       }
-      if (simRusak) { try { log('v2.2 SIM error, fallback geometri.'); } catch (e4) {} cands[0].validated = true; return cands[0]; }
+      if (simRusak) { try { log('v2.2 SIM error, fallback geometri (TIDAK tervalidasi — tidak ditembak otomatis).'); } catch (e4) {} return cands[0]; }
       // v2.2: garis prediksi SELALU ada (ala Arab) — sim display terpisah dari
       // keputusan tembak. Kandidat terbaik geometri selalu dapat simRes untuk
       // digambar, walau tembakannya tidak divalidasi.
@@ -1779,12 +1782,17 @@ var AKV2_VERSION = '2.40';
       else { try { log('v2.2 SIM: tidak ada tembakan VALID (3 kandidat x sweep power ditolak) — garis prediksi tetap ditampilkan, tidak ditembak.'); } catch (e6) {} }
       return best || disp; // validated=true -> boleh tembak; false -> cuma display
     }
-    function pickShot(balls, pockets, R, group, allowBank, pocketWidth) {
-      if (typeof S !== 'undefined' && S.useSim) {
+    function pickShot(balls, pockets, R, group, allowBank, pocketWidth, noSim) {
+      // v2.41: noSim=true = geometri saja (untuk gambar garis display di
+      // refreshOverlay — jangan jalankan sim tiap 3 detik, itu biang patah-patah).
+      if (!noSim && typeof S !== 'undefined' && S.useSim) {
         try { var v2 = solveShotV2(balls, pockets, R, group, allowBank, pocketWidth); if (v2) return v2; } catch (e) {}
       }
       var g = solveShot(balls, pockets, R, group, allowBank, pocketWidth);
-      if (g) g.validated = true; // fallback geometri murni (sim mati) -> boleh tembak seperti dulu
+      // v2.41: JANGAN beri label validated pada fallback geometri. Dulu
+      // g.validated = true di sini → autoplay menembak tembakan yang sim-nya
+      // sudah TOLAK semua (obat "pantul ga jelas bikin kalah"). Garis tetap
+      // digambar (drawShot), tapi shootNext tidak akan menembak tanpa validated.
       return g;
     }
 
@@ -1873,7 +1881,7 @@ var AKV2_VERSION = '2.40';
       p.id = 'akv2';
       p.style.cssText = 'position:fixed;top:68px;right:8px;z-index:2147483000;touch-action:manipulation;-webkit-tap-highlight-color:transparent;width:300px;max-height:92vh;overflow-y:auto;background:#FFF6E5;color:#111;font:bold 13px Arial,sans-serif;padding:10px;border:3px solid #111;border-radius:12px;box-shadow:4px 4px 0 #111;box-sizing:border-box';
       p.innerHTML =
-        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.40</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">heap saja, tanpa deteksi canvas. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
+        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.41</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">heap saja, tanpa deteksi canvas. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
         '<button id="akv2LinePreview" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#E1BEE7;box-shadow:2px 2px 0 #111;margin-top:8px">🎯 LINE PREVIEW: ON</button>' +
         '<button id="akv2AutoplayBtn" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#59D977;box-shadow:2px 2px 0 #111;margin-top:6px">▶️ AUTO PLAY: OFF</button>' +
         '<button id="akv2MatchBaru" style="width:100%;min-height:46px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF9800;color:#fff;box-shadow:2px 2px 0 #111;margin-top:6px">🔄 MATCH BARU</button>' +
@@ -3552,11 +3560,23 @@ var AKV2_VERSION = '2.40';
       S.breakDone = false; S.oppStartBalls = null; S.cushLines = null;
       S.linesFrozen = false; S.shooting = false;
       S.refreshLastBalls = null; S.fastLastBalls = null;
+      // v2.41: reset juga state yang bisa nge-block deteksi ulang (cooldown
+      // 30 detik + flag tunggu dari match lama) — ini yang bikin MATCH BARU ga work.
+      S.lastAutoDetectFail = 0; S.autoDetecting = false;
+      S.waitChange = false; S.waitChangeBalls = null;
+      S.autoWaiting = false; S.oppWait = false; S.oppMoved = false;
       // Clear overlay
       try { var oc = $('akv2Overlay'); if (oc) oc.getContext('2d').clearRect(0, 0, oc.width, oc.height); } catch (e) {}
       updateLearnStat();
       log('🔄 MATCH BARU: state di-clear, deteksi ulang...');
-      try { await autoDetect(); } catch (e) { log('Match baru deteksi error: ' + e.message); }
+      // v2.41: coba deteksi sampai 3x (jeda 1.5 detik) — rack baru kadang belum siap dibaca.
+      var _mbOk = false;
+      for (var _mi = 0; _mi < 3 && !_mbOk; _mi++) {
+        try { await autoDetect(); } catch (e) { log('Match baru deteksi error: ' + e.message); }
+        if (S.learned) { _mbOk = true; break; }
+        if (_mi < 2) { log('🔄 MATCH BARU: deteksi belum dapat, coba lagi...'); await new Promise(function (r) { setTimeout(r, 1500); }); }
+      }
+      if (!_mbOk) log('🔄 MATCH BARU: deteksi belum berhasil — tunggu bola diam lalu tekan MATCH BARU lagi.');
       // Auto-detect cushion lines juga
       try { applyHeapCushionLines(); } catch (e2) {}
       log('🔄 MATCH BARU selesai — siap main!');
@@ -3625,7 +3645,7 @@ var AKV2_VERSION = '2.40';
       }
       S.refreshLastBalls = autoRes.balls;
       if (!stable) return;
-      var shot = pickShot(autoRes.balls, autoRes.pockets, autoRes.radius, S.group, S.allowBank, autoRes.pocketWidth);
+      var shot = pickShot(autoRes.balls, autoRes.pockets, autoRes.radius, S.group, S.allowBank, autoRes.pocketWidth, true); // v2.41: noSim — garis display saja, sim tiap 3 detik bikin patah-patah
       S.lastScan = { res: autoRes, shot: shot || null };
       drawShot(shot, autoRes);
       if (shot) log('REFRESH garis target=' + autoRes.balls[shot.targetIdx].num + ' (otomatis, bola stabil)');
