@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         8BP AKWeb Solver Gabungan v2.67 (Getter + dynCall)
+// @name         8BP AKWeb Solver Gabungan v2.68 (Getter + dynCall)
 // @namespace    nbp
-// @version      gabungan-v2.67
-// @description  v2.67 GRUP (watcher + tahan kalau grup ANY) + v2.66 ala AKWeb: PISAH SIM dari GAMBAR (cek AKWeb: renderer rAF tiap frame tanpa throttle, JS tidak pernah sim ulang per frame — yang digambar path yang sudah dihitung native; mode manual cuma RAY lurus) + POWER & TITIK HENTI di canvas (lingkaran berisi nomor bola target di titik henti ala AKWeb ue, teks PWR xx% di dekat putih); sim tetap 50 ms, gambar tiap frame dari cache + ray kalau sim ketinggalan + v2.65 GARIS MANUAL TIAP 50 ms (bukan 150 ms — gate baca-bola 150 ms itu penyebab delay garis v2.63/v2.64: garis ketinggalan sampai 0,15 detik dari jari; sim murah ~10 ms + livePreview cuma re-sim kalau aim/power berubah, jadi rebuild 50 ms aman; baca bola tetap 150 ms) + v2.64 PETA POWER AFFINE (kalibrasi live Steel 2026-11-11: V(rasio) = 440*rasio - 70, dead-zone ~0.16 — peta proporsional v2.62 salah sistematis di luar tengah, itu sebabnya titik berhenti putih tidak sesuai garis) + BREAK 0.8 (bukan MAX — power 0,8 terbukti 2026-11-08, MAX 1.0 tidak pernah masuk live); tuner tetap +-3%/tembakan tapi pada slope (440, clamp 350-550); bola dibaca via getter dynCall + fallback scan heap + pointer tracking (tanda nomor+92/radius+48, terbukti v2.46; alamat dilacak sekali, baca O(16) tanpa sweep ulang), tembak via dynCall setAim/setPower/takeShot + fallback DRAG pointer kalau gate manager/table gagal (angka Steel tidak jalan live), commit gate + plan satu siklus, loop requestAnimationFrame + fallback timer. Binding live guest (wasm sha 6c7a33d4..): manager HEAP32[27555]/[37069], getTable 7992, getBall 24373, setter di objek cue — tervalidasi di rig meja menu; posisi + tembakan belum terbukti di match live (lobby WebSocket diblokir di rig).
+// @version      gabungan-v2.68
+// @description  v2.68 AKWeb SAMPAI AKAR (tanpa-tunggu-lawan + bola bebas meja terbuka + garis manual RAY + restitusi bantalan 0.45) + v2.67 GRUP (watcher + tahan kalau grup ANY) + v2.66 ala AKWeb: PISAH SIM dari GAMBAR (cek AKWeb: renderer rAF tiap frame tanpa throttle, JS tidak pernah sim ulang per frame — yang digambar path yang sudah dihitung native; mode manual cuma RAY lurus) + POWER & TITIK HENTI di canvas (lingkaran berisi nomor bola target di titik henti ala AKWeb ue, teks PWR xx% di dekat putih); sim tetap 50 ms, gambar tiap frame dari cache + ray kalau sim ketinggalan + v2.65 GARIS MANUAL TIAP 50 ms (bukan 150 ms — gate baca-bola 150 ms itu penyebab delay garis v2.63/v2.64: garis ketinggalan sampai 0,15 detik dari jari; sim murah ~10 ms + livePreview cuma re-sim kalau aim/power berubah, jadi rebuild 50 ms aman; baca bola tetap 150 ms) + v2.64 PETA POWER AFFINE (kalibrasi live Steel 2026-11-11: V(rasio) = 440*rasio - 70, dead-zone ~0.16 — peta proporsional v2.62 salah sistematis di luar tengah, itu sebabnya titik berhenti putih tidak sesuai garis) + BREAK 0.8 (bukan MAX — power 0,8 terbukti 2026-11-08, MAX 1.0 tidak pernah masuk live); tuner tetap +-3%/tembakan tapi pada slope (440, clamp 350-550); bola dibaca via getter dynCall + fallback scan heap + pointer tracking (tanda nomor+92/radius+48, terbukti v2.46; alamat dilacak sekali, baca O(16) tanpa sweep ulang), tembak via dynCall setAim/setPower/takeShot + fallback DRAG pointer kalau gate manager/table gagal (angka Steel tidak jalan live), commit gate + plan satu siklus, loop requestAnimationFrame + fallback timer. Binding live guest (wasm sha 6c7a33d4..): manager HEAP32[27555]/[37069], getTable 7992, getBall 24373, setter di objek cue — tervalidasi di rig meja menu; posisi + tembakan belum terbukti di match live (lobby WebSocket diblokir di rig).
 // @match        https://prod-web-pool.miniclip.com/*
 // @match        https://*.pool.miniclippt.com/*
 // @match        https://*.miniclip.com/*
@@ -12,7 +12,7 @@
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
-var AKV2_VERSION = '2.67';
+var AKV2_VERSION = '2.68';
 (function () {
   'use strict';
   function pageCode() {
@@ -468,7 +468,10 @@ var AKV2_VERSION = '2.67';
       // diteruskan ke sini — G[0]/G[1] undefined -> NaN -> 336/364
       // kandidat NaN, dan sort NaN mengembalikan pick NaN sebagai 'best').
       if (!isFinite(C[0]) || !isFinite(C[1]) || !isFinite(G[0]) || !isFinite(G[1]) || !isFinite(R)) return null;
-      var e = 0.804, W = rect.xmax, H = rect.ymax, xmin = rect.xmin, ymin = rect.ymin;
+      // v2.68: restitusi bantalan 0.45 (UKUR LIVE Steel 2026-11-11) — dulu
+      // 0.804 (bawaan PoolPredictor) bikin pantulan sim kebesaran: garis
+      // bank/kick tidak sama dengan live, itu sumber "line ga akurat".
+      var e = 0.45, W = rect.xmax, H = rect.ymax, xmin = rect.xmin, ymin = rect.ymin;
       var edge = Math.max(R, R * 1.75);
       if (cn[0] !== 0) {
         var p = cn[0] < 0 ? xmin + edge : W - edge;
@@ -733,7 +736,8 @@ var AKV2_VERSION = '2.67';
         if (velocityFactor < minSpinFactor) minSpinFactor = velocityFactor;
         const spinChange = spinDirection * minSpinFactor;
         const newVelocityX = velocityX - spinChange / 2.5;
-        const newVelocityY = -0.804 * velocityY;
+        // v2.68: restitusi bantalan 0.45 (ukur live) — dulu 0.804.
+        const newVelocityY = -0.45 * velocityY;
         this.vx = angleSin * newVelocityY + angleCos * newVelocityX;
         this.vy = angleCos * newVelocityY - newVelocityX * angleSin;
         const newSpinX = angleSin * this.sx + angleCos * this.sy;
@@ -2152,6 +2156,8 @@ var AKV2_VERSION = '2.67';
       cushLearn: null,
       // v2.10: flag break — bola masuk pas break TIDAK menentukan grup
       breakDone: false,
+      // v2.68: hitung pot pasca-break (meja terbuka = 0) + watchdog autoWaiting
+      postBreakPots: 0, autoWaitSince: 0,
       // v2.46: flag validasi rack — validasi rack cuma boleh memicu deteksi
       // ulang 1x per meja. Kalau posisi MASIH kesebar sesudah deteksi ulang =
       // break sudah terjadi (bukan array stale) -> breakDone=true, loop berhenti.
@@ -2181,7 +2187,7 @@ var AKV2_VERSION = '2.67';
       p.id = 'akv2';
       p.style.cssText = 'position:fixed;top:68px;right:8px;z-index:2147483000;touch-action:manipulation;-webkit-tap-highlight-color:transparent;width:300px;max-height:92vh;overflow-y:auto;background:#FFF6E5;color:#111;font:bold 13px Arial,sans-serif;padding:10px;border:3px solid #111;border-radius:12px;box-shadow:4px 4px 0 #111;box-sizing:border-box';
       p.innerHTML =
-        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.67</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">getter dynCall + scan heap fallback + pointer tracking + tembak dynCall + drag fallback ala AKWeb. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
+        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.68</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">getter dynCall + scan heap fallback + pointer tracking + tembak dynCall + drag fallback ala AKWeb. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
         '<button id="akv2LinePreview" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#E1BEE7;box-shadow:2px 2px 0 #111;margin-top:8px">🎯 LINE PREVIEW: ON</button>' +
         '<button id="akv2AutoplayBtn" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#59D977;box-shadow:2px 2px 0 #111;margin-top:6px">▶️ AUTO PLAY: OFF</button>' +
         '<button id="akv2MatchBaru" style="width:100%;min-height:46px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF9800;color:#fff;box-shadow:2px 2px 0 #111;margin-top:6px">🔄 MATCH BARU</button>' +
@@ -3873,7 +3879,7 @@ var AKV2_VERSION = '2.67';
           try { _drew = livePreview(_mr, _mShot); } catch (eLP3) {}
           if (!_drew) {
             var _mSig = _mShot.angle.toFixed(3) + '|' + _mShot.targetIdx + '|' + _mShot.ghost[0].toFixed(1) + ',' + _mShot.ghost[1].toFixed(1);
-            if (_mSig !== S.lastManualSig) { S.lastManualSig = _mSig; drawShot(_mShot, _mr); }
+            if (_mSig !== S.lastManualSig) { S.lastManualSig = _mSig; drawShot(_mShot, _mr, true); }
           }
         } else if (changed) {
           refreshOverlay().catch(function () {});
@@ -3910,14 +3916,12 @@ var AKV2_VERSION = '2.67';
         var mShot = null;
         try { mShot = manualShotFromAim(res); } catch (eMS3) { mShot = null; }
         if (!mShot) return;
-        if (f && f.shot && f.res && Math.abs(f.angle - mShot.angle) < 0.002) {
-          var dsig = 'sim:' + f.angle.toFixed(3) + '|' + Math.round(f.powerSim);
-          if (dsig !== S.liveDrawSig) { S.liveDrawSig = dsig; drawShot(f.shot, f.res); }
-        } else {
-          // Sim ketinggalan aim baru -> garis bidik manual (ray, tanpa sim).
-          var rsig = 'ray:' + mShot.angle.toFixed(3) + '|' + mShot.targetIdx;
-          if (rsig !== S.liveDrawSig) { S.liveDrawSig = rsig; drawShot(mShot, res); }
-        }
+        // v2.68: mode BEBAS = RAY saja ala AKWeb (acceptSearchRay) — jangan
+        // gambar sim multi-bola (spaghetti di meja cluster + pantulan sim
+        // lama 0.804 tidak sama dengan live). Sim penuh hanya untuk plan AUTO.
+        if (f && f.shot && typeof f.shot.livePowerPct === 'number') mShot.livePowerPct = f.shot.livePowerPct;
+        var rsig = 'ray:' + mShot.angle.toFixed(3) + '|' + mShot.targetIdx + '|' + (mShot.livePowerPct || 0);
+        if (rsig !== S.liveDrawSig) { S.liveDrawSig = rsig; drawShot(mShot, res, true); }
       } catch (e) {}
     }
     function loopTick() {
@@ -4451,7 +4455,11 @@ var AKV2_VERSION = '2.67';
       var msg = 'CEK POCKET (' + res.method + '): ' + ok + '/6 PAS' + (ok === 6 ? ' -> kalibrasi cocok, itu lubangnya' : ' -> ada yang beda, cek kalibrasi pocket');
       log(msg); stat(msg);
     }
-    function drawShot(shot, res) {
+    // v2.68 rayOnly: mode manual ala AKWeb (acceptSearchRay) — HANYA ray
+    // (cue->ghost + ghost->saku), tanpa sim multi-bola. Sim penuh hanya
+    // untuk plan AUTO (magnet). Alasan: sim multi-bola di meja cluster +
+    // power 100% = spaghetti yang tidak sama dengan live.
+    function drawShot(shot, res, rayOnly) {
       // v2.26: hormati toggle line preview
       if (typeof S !== 'undefined' && S.linePreview === false) {
         try { var oc0 = $('akv2Overlay'); if (oc0) oc0.getContext('2d').clearRect(0, 0, oc0.width, oc0.height); } catch (e0) {}
@@ -4538,7 +4546,7 @@ var AKV2_VERSION = '2.67';
       // tidak dari shot.simRes (sim plan). dispRes diisi livePreview
       // tiap tick dari aim/power game saat ini.
       var _simDraw = (shot && shot.dispRes && shot.dispRes.balls) ? shot.dispRes : (shot && shot.simRes ? shot.simRes : null);
-      if (_simDraw && _simDraw.balls) {
+      if (!rayOnly && _simDraw && _simDraw.balls) {
         for (var _si = 0; _si < _simDraw.balls.length; _si++) {
           (function (sb) {
             if (!sb.positions || sb.positions.length < 2) return; // tidak tersentuh, skip
@@ -4583,6 +4591,12 @@ var AKV2_VERSION = '2.67';
         ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 4; ctx.stroke();
         // v2.58: garis target->pocket putus-putus DIHAPUS (user: tidak akurat).
         // Pocket tetap ditandai cincin pink, bola target cincin pink — tanpa garis penghubung.
+        // v2.68: di mode RAY (manual ala AKWeb), garis target->saku SOLID
+        // warna bola target — arah = ghost->target->saku (bukan putus-putus).
+        if (rayOnly) {
+          ctx.beginPath(); ctx.moveTo(ts[0], ts[1]); ctx.lineTo(ps[0], ps[1]);
+          ctx.strokeStyle = BALL_COLORS[tgt.num] || '#ffd43b'; ctx.globalAlpha = 0.9; ctx.lineWidth = 3; ctx.stroke(); ctx.globalAlpha = 1;
+        }
         ctx.beginPath(); ctx.arc(gs[0], gs[1], 12, 0, 7); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
         ctx.beginPath(); ctx.arc(ts[0], ts[1], 14, 0, 7); ctx.strokeStyle = '#ff3df2'; ctx.lineWidth = 3; ctx.stroke();
         // Prediksi bola putih pasca-tumbukan ala cheat umum: garis defleksi dari
@@ -4689,7 +4703,9 @@ var AKV2_VERSION = '2.67';
         // gambar ulang path yang sudah dihitung native).
         shot.livePowerPct = Math.round(simPowerToRatio(livePowerSim) * 100);
         S.liveFrame = { shot: shot, res: res, angle: liveAngle, powerSim: livePowerSim, at: Date.now() };
-        drawShot(shot, res);
+        // v2.68: manual (BEBAS, !magnet) = RAY saja ala AKWeb; sim penuh
+        // hanya untuk plan AUTO (magnet).
+        drawShot(shot, res, !magnet);
         return true;
       } catch (e) { return false; }
     }
@@ -4943,7 +4959,7 @@ var AKV2_VERSION = '2.67';
         var r = S.lastGetterRes || null;
         var nBalls = r ? r.balls.length : 0;
         var lines = [];
-        lines.push('v2.67 | LOOP tick ' + (S.diagTick || 0) + ' | AUTOPLAY: ' + (S.autoBeruntun ? 'ON' : 'OFF') + (S.autoUserOff ? ' (dimatikan user)' : '') + ' | autoTick ' + (S.autoTickCount || 0) + 'x | bola ' + nBalls + (r && r.numbersOk ? '' : ' (TIDAK OK)') + ' | build ' + (S.buildName || '?') + ' | grup ' + (S.group || 'ANY'));
+        lines.push('v2.68 | LOOP tick ' + (S.diagTick || 0) + ' | AUTOPLAY: ' + (S.autoBeruntun ? 'ON' : 'OFF') + (S.autoUserOff ? ' (dimatikan user)' : '') + ' | autoTick ' + (S.autoTickCount || 0) + 'x | bola ' + nBalls + (r && r.numbersOk ? '' : ' (TIDAK OK)') + ' | build ' + (S.buildName || '?') + ' | grup ' + (S.group || 'ANY'));
         // Baris penentu: SATU kalimat alasan kenapa belum menembak.
         lines.push('➤ ' + diagBlockerReason(g, r));
         if (S.autoBeruntun && S.holdReason) lines.push('TAHAN (keputusan autoplay): ' + S.holdReason);
@@ -5046,7 +5062,7 @@ var AKV2_VERSION = '2.67';
         if (g.ia !== undefined && g.ia !== null && g.ia !== 1) return 'INPUT TIDAK AKTIF (inputActive=' + g.ia + ').';
         if (g.pm !== undefined && g.pm !== null && g.pm !== 0) return 'POWER MODE AKTIF (powerMode=' + g.pm + ') — sedang tarik power.';
         if ((g.aa !== undefined && g.aa !== null && g.aa !== 0) || (g.pa !== undefined && g.pa !== null && g.pa !== 0)) return 'ANIMASI AIM/POWER MASIH JALAN (aa=' + g.aa + ' pa=' + g.pa + ').';
-        if (S.oppWait) return 'MENUNGGU LAWAN MENEMBAK (30 detik) — lalu lanjut otomatis.';
+        if (S.oppWait) return 'MENUNGGU LAWAN MENEMBAK (15 detik) — lalu lanjut otomatis.';
         if (S.autoWaiting) return 'MENUNGGU BOLA BERHENTI setelah tembakan...';
         if (S.waitChange) return 'PICKER: tidak ada tembakan VALID (sim menolak semua) — menunggu meja berubah / retry 5 detik.';
         if (S.lastPick && !S.lastPick.validated) {
@@ -5106,7 +5122,12 @@ var AKV2_VERSION = '2.67';
       // POLOS LAWAN — karena grup tetap ANY se-match (deteksi lama tidak
       // pernah ke-trigger). Break dikecualikan (grup memang belum ada).
       // Solo (TUNGGU LAWAN OFF) dan 9-ball tidak pakai grup -> tidak ditahan.
-      if (S.gameMode === '8' && S.waitOpp && !S.group && !(autoRes && isBreakShot(autoRes.balls) && !S.breakDone)) return { fire: false, reason: 'GRUP BELUM KETAHUAN (ANY) — tahan, jangan tembak bola lawan. Grup ketahuan setelah ada bola masuk (watcher v2.67) atau tap 1-7 / 9-15 manual.' };
+      // v2.68: MEJA TERBUKA dikecualikan — kalau belum ada bola masuk
+      // pasca-break (postBreakPots==0), grup memang belum ada dan solver
+      // BOLEH masukin bola BEBAS (pot pertama itu yang menentukan grup,
+      // watcher v2.67 yang mencocokkan). Tahan hanya kalau sudah ada pot
+      // pasca-break tapi grup tetap tidak ketahuan.
+      if (S.gameMode === '8' && S.waitOpp && !S.group && (S.postBreakPots || 0) > 0 && !(autoRes && isBreakShot(autoRes.balls) && !S.breakDone)) return { fire: false, reason: 'GRUP BELUM KETAHUAN (ANY) — tahan, jangan tembak bola lawan. Grup ketahuan setelah ada bola masuk (watcher v2.67) atau tap 1-7 / 9-15 manual.' };
       if ((autoRes && autoRes.cueInHand) || S.cueInHand) return { fire: false, reason: 'BOLA TANGAN — letakkan putih manual dulu.' };
       if (S.matchResult) return { fire: false, reason: 'MATCH SELESAI (' + S.matchResult + ') — tap MATCH BARU.' };
       var g = S.diagGate || {};
@@ -5224,7 +5245,7 @@ var AKV2_VERSION = '2.67';
       S.autoUserOff = false;
       if (S.group) { try { log('GRUP di-reset (match baru): ' + S.group + ' -> ANY'); } catch (eG) {} }
       S.group = null; try { updateGroupBtn(); } catch (eGB) {}
-      S.grpPrevNums = null; S.grpShooter = null;
+      S.grpPrevNums = null; S.grpShooter = null; S.postBreakPots = 0; S.autoWaitSince = 0;
       S.breakDone = false; S.rackValidated = false; S.oppStartBalls = null;
       S.waitChange = false; S.waitChangeBalls = null; S.waitChangeSince = 0;
       S.autoWaiting = false; S.oppWait = false; S.oppMoved = false; S.oppWaitStart = 0; S.oppLastBalls = null;
@@ -5419,7 +5440,7 @@ var AKV2_VERSION = '2.67';
       S.lastScan = { res: autoRes, shot: shot };
       S.autoPreShotNums = autoRes.balls.map(function (b) { return b.num; });
       S.tunePre = autoRes; S.tuneShot = shot;
-      S.autoWaiting = true; S.autoStableCount = 0; S.autoLastBalls = null;
+      S.autoWaiting = true; S.autoWaitSince = Date.now(); S.autoStableCount = 0; S.autoLastBalls = null;
       log('AUTO tembak target=' + autoRes.balls[shot.targetIdx].num + ' powerUI=' + shot.power.toFixed(0) + (shot.simPower ? ' (sim ' + Math.round(shot.simPower) + ')' : ''));
       var plan = buildPlan(autoRes, shot);
       var fired = await shootWithFallback(plan, autoRes, shot);
@@ -5457,7 +5478,7 @@ var AKV2_VERSION = '2.67';
       // v2.10: Cek apakah ini tembakan BREAK (16 bola sebelum tembak) — kalau ya, skip penentuan grup.
       var wasBreak = S.tunePre && S.tunePre.balls && S.tunePre.balls.length >= 16;
       try { autoDetectGroup(pottedNums, wasBreak); } catch (eG) {}
-      if (wasBreak) S.breakDone = true;
+      if (wasBreak) { S.breakDone = true; S.postBreakPots = 0; }
       // v2.2: CUE AUTO-TUNE belajar dari hasil tembakan ini (sebelum state di-reset).
       try { tuneCuePower(S.tunePre, autoRes, S.tuneShot); } catch (e) {}
       // v2.4: POCKET LEARN dari bola yang masuk.
@@ -5510,6 +5531,21 @@ var AKV2_VERSION = '2.67';
         if (S.oppWait) {
           if (ballsMoved(S.oppLastBalls, autoRes.balls, 3)) S.oppMoved = true;
           S.oppLastBalls = autoRes.balls;
+          // v2.68: JANGAN TUNGGU LAWAN kalau giliran sudah kembali ke kita
+          // + meja stabil — gate (gameState=4, giliran kita) adalah penjaga
+          // yang sebenarnya; menunggu 30 detik bikin autoplay ngestuck
+          // (lawan pasif/AFK) sampai user harus OFF-ON manual. Keluar
+          // langsung dan tembak. Timeout cadangan 30 -> 15 detik.
+          var _g = S.diagGate || {};
+          if (_g.gs === 4 && _g.pt === 1 && _g.ws === 1 && _g.ia === 1 && autoStableCheck(autoRes)) {
+            S.oppWait = false; S.oppMoved = false;
+            log('Giliran sudah kembali + meja stabil — tidak menunggu lawan, langsung main.');
+            try { if (S.oppStartBalls) autoDetectGroupFromOpp(S.oppStartBalls, autoRes.balls); } catch (eGO2) {}
+            S.oppStartBalls = null;
+            S.autoStableCount = 2;
+            await shootNext(autoRes);
+            return;
+          }
           if (S.oppMoved && autoStableCheck(autoRes)) {
             S.oppWait = false; S.oppMoved = false;
             log('Lawan selesai menembak — giliranmu lagi.');
@@ -5517,9 +5553,9 @@ var AKV2_VERSION = '2.67';
             S.oppStartBalls = null;
             S.autoStableCount = 2;
             await shootNext(autoRes);
-          } else if (Date.now() - S.oppWaitStart > 30000) {
+          } else if (Date.now() - S.oppWaitStart > 15000) {
             S.oppWait = false; S.oppMoved = false;
-            log('30 detik tanpa tembakan lawan terdeteksi — lanjut main. (Matikan TUNGGU LAWAN kalau main solo.)');
+            log('15 detik tanpa tembakan lawan terdeteksi — lanjut main. (Matikan TUNGGU LAWAN kalau main solo.)');
             S.autoStableCount = 2;
             await shootNext(autoRes);
           }
@@ -5535,6 +5571,17 @@ var AKV2_VERSION = '2.67';
           } else return;
         }
         if (S.autoWaiting) {
+          // v2.68 WATCHDOG (ala AKWeb phaseDeadline): kalau menunggu bola
+          // diam >20 detik (bola tidak pernah stabil / hasil tembakan tidak
+          // terdeteksi), reset dan coba lagi — jangan ngestuck sampai user
+          // harus OFF-ON autoplay manual.
+          if (Date.now() - (S.autoWaitSince || 0) > 20000) {
+            log('WATCHDOG: autoWaiting >20 dtk tanpa bola stabil — reset & coba lagi.');
+            S.autoWaiting = false; S.tunePre = null; S.tuneShot = null; S.autoPreShotNums = null;
+            S.autoStableCount = 0; S.autoLastBalls = null;
+            await shootNext(autoRes);
+            return;
+          }
           if (!autoStableCheck(autoRes)) return;
           await afterShotStable(autoRes);
         } else {
@@ -5636,6 +5683,8 @@ var AKV2_VERSION = '2.67';
       if (prevCount >= 16) { S.grpPrevNums = nums; return; }
       var gone = [];
       for (var n in prev) if (!nums[n]) gone.push(+n);
+      // v2.68: hitung pot pasca-break (break sudah dilewat di atas).
+      if (gone.length >= 1) S.postBreakPots = (S.postBreakPots || 0) + gone.length;
       if (gone.length !== 1) { S.grpPrevNums = nums; return; }
       var pt = (S.diagGate || {}).pt;
       if (pt !== 0 && pt !== 1) { S.grpPrevNums = nums; return; }
