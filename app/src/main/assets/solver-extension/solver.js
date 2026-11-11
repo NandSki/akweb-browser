@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         8BP AKWeb Solver Gabungan v2.65 (Getter + dynCall)
+// @name         8BP AKWeb Solver Gabungan v2.66 (Getter + dynCall)
 // @namespace    nbp
-// @version      gabungan-v2.65
-// @description  v2.65 ala AKWeb: GARIS MANUAL TIAP 50 ms (bukan 150 ms — gate baca-bola 150 ms itu penyebab delay garis v2.63/v2.64: garis ketinggalan sampai 0,15 detik dari jari; sim murah ~10 ms + livePreview cuma re-sim kalau aim/power berubah, jadi rebuild 50 ms aman; baca bola tetap 150 ms) + v2.64 PETA POWER AFFINE (kalibrasi live Steel 2026-11-11: V(rasio) = 440*rasio - 70, dead-zone ~0.16 — peta proporsional v2.62 salah sistematis di luar tengah, itu sebabnya titik berhenti putih tidak sesuai garis) + BREAK 0.8 (bukan MAX — power 0,8 terbukti 2026-11-08, MAX 1.0 tidak pernah masuk live); tuner tetap +-3%/tembakan tapi pada slope (440, clamp 350-550); bola dibaca via getter dynCall + fallback scan heap + pointer tracking (tanda nomor+92/radius+48, terbukti v2.46; alamat dilacak sekali, baca O(16) tanpa sweep ulang), tembak via dynCall setAim/setPower/takeShot + fallback DRAG pointer kalau gate manager/table gagal (angka Steel tidak jalan live), commit gate + plan satu siklus, loop requestAnimationFrame + fallback timer. Binding live guest (wasm sha 6c7a33d4..): manager HEAP32[27555]/[37069], getTable 7992, getBall 24373, setter di objek cue — tervalidasi di rig meja menu; posisi + tembakan belum terbukti di match live (lobby WebSocket diblokir di rig).
+// @version      gabungan-v2.66
+// @description  v2.66 ala AKWeb: PISAH SIM dari GAMBAR (cek AKWeb: renderer rAF tiap frame tanpa throttle, JS tidak pernah sim ulang per frame — yang digambar path yang sudah dihitung native; mode manual cuma RAY lurus) + POWER & TITIK HENTI di canvas (lingkaran berisi nomor bola target di titik henti ala AKWeb ue, teks PWR xx% di dekat putih); sim tetap 50 ms, gambar tiap frame dari cache + ray kalau sim ketinggalan + v2.65 GARIS MANUAL TIAP 50 ms (bukan 150 ms — gate baca-bola 150 ms itu penyebab delay garis v2.63/v2.64: garis ketinggalan sampai 0,15 detik dari jari; sim murah ~10 ms + livePreview cuma re-sim kalau aim/power berubah, jadi rebuild 50 ms aman; baca bola tetap 150 ms) + v2.64 PETA POWER AFFINE (kalibrasi live Steel 2026-11-11: V(rasio) = 440*rasio - 70, dead-zone ~0.16 — peta proporsional v2.62 salah sistematis di luar tengah, itu sebabnya titik berhenti putih tidak sesuai garis) + BREAK 0.8 (bukan MAX — power 0,8 terbukti 2026-11-08, MAX 1.0 tidak pernah masuk live); tuner tetap +-3%/tembakan tapi pada slope (440, clamp 350-550); bola dibaca via getter dynCall + fallback scan heap + pointer tracking (tanda nomor+92/radius+48, terbukti v2.46; alamat dilacak sekali, baca O(16) tanpa sweep ulang), tembak via dynCall setAim/setPower/takeShot + fallback DRAG pointer kalau gate manager/table gagal (angka Steel tidak jalan live), commit gate + plan satu siklus, loop requestAnimationFrame + fallback timer. Binding live guest (wasm sha 6c7a33d4..): manager HEAP32[27555]/[37069], getTable 7992, getBall 24373, setter di objek cue — tervalidasi di rig meja menu; posisi + tembakan belum terbukti di match live (lobby WebSocket diblokir di rig).
 // @match        https://prod-web-pool.miniclip.com/*
 // @match        https://*.pool.miniclippt.com/*
 // @match        https://*.miniclip.com/*
@@ -12,7 +12,7 @@
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
-var AKV2_VERSION = '2.65';
+var AKV2_VERSION = '2.66';
 (function () {
   'use strict';
   function pageCode() {
@@ -2168,7 +2168,7 @@ var AKV2_VERSION = '2.65';
       p.id = 'akv2';
       p.style.cssText = 'position:fixed;top:68px;right:8px;z-index:2147483000;touch-action:manipulation;-webkit-tap-highlight-color:transparent;width:300px;max-height:92vh;overflow-y:auto;background:#FFF6E5;color:#111;font:bold 13px Arial,sans-serif;padding:10px;border:3px solid #111;border-radius:12px;box-shadow:4px 4px 0 #111;box-sizing:border-box';
       p.innerHTML =
-        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.65</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">getter dynCall + scan heap fallback + pointer tracking + tembak dynCall + drag fallback ala AKWeb. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
+        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.66</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">getter dynCall + scan heap fallback + pointer tracking + tembak dynCall + drag fallback ala AKWeb. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
         '<button id="akv2LinePreview" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#E1BEE7;box-shadow:2px 2px 0 #111;margin-top:8px">🎯 LINE PREVIEW: ON</button>' +
         '<button id="akv2AutoplayBtn" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#59D977;box-shadow:2px 2px 0 #111;margin-top:6px">▶️ AUTO PLAY: OFF</button>' +
         '<button id="akv2MatchBaru" style="width:100%;min-height:46px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF9800;color:#fff;box-shadow:2px 2px 0 #111;margin-top:6px">🔄 MATCH BARU</button>' +
@@ -3243,7 +3243,7 @@ var AKV2_VERSION = '2.65';
     function buildPlan(autoRes, shot) {
       // Plan terikat SATU siklus: satu tembakan per plan; tablePointer /
       // shotId (contextHash posisi bola) berubah -> plan batal.
-      var planId = 'p265-' + (++S.planCounter) + '-' + Date.now().toString(36);
+      var planId = 'p266-' + (++S.planCounter) + '-' + Date.now().toString(36);
       var cue = null, tgt = null;
       for (var i = 0; i < autoRes.balls.length; i++) if (autoRes.balls[i].num === 0) cue = autoRes.balls[i];
       if (shot && shot.targetIdx >= 0) tgt = autoRes.balls[shot.targetIdx];
@@ -3264,7 +3264,7 @@ var AKV2_VERSION = '2.65';
         nominatedPocket: shot && shot.pocket ? { x: shot.pocket.x, y: shot.pocket.y } : null,
         cuePtr: cue ? cue.ptr : 0, module: autoRes.module, buffer: autoRes.buffer, used: false, createdAt: Date.now() };
       S.currentPlan = plan;
-      try { sessionStorage.setItem('akv2plan265', JSON.stringify({ planId: plan.planId, tablePointer: plan.tablePointer, shotId: plan.shotId, target: plan.target, angle: plan.angle, powerRatio: plan.powerRatio })); } catch (e) {}
+      try { sessionStorage.setItem('akv2plan266', JSON.stringify({ planId: plan.planId, tablePointer: plan.tablePointer, shotId: plan.shotId, target: plan.target, angle: plan.angle, powerRatio: plan.powerRatio })); } catch (e) {}
       log('PLAN ' + plan.planId + ' target=' + plan.target + ' angle=' + (plan.angle * 180 / Math.PI).toFixed(1) + ' powerRatio=' + plan.powerRatio.toFixed(2) + ' spin=(' + spin.x.toFixed(2) + ',' + spin.y.toFixed(2) + ')' + ' shotId=' + plan.shotId);
       return plan;
     }
@@ -3272,7 +3272,7 @@ var AKV2_VERSION = '2.65';
     function clearPlan(why) {
       if (S.currentPlan) log('PLAN batal: ' + (why || ''));
       S.currentPlan = null;
-      try { sessionStorage.removeItem('akv2plan265'); } catch (e) {}
+      try { sessionStorage.removeItem('akv2plan266'); } catch (e) {}
     }
     // v2.58: baca SATU field gate AKWeb via dynCall_iii [func, recv, sel].
     // {ok:true, value} kalau panggilan berhasil + angka; {ok:false} kalau
@@ -3867,7 +3867,50 @@ var AKV2_VERSION = '2.65';
         }
       } catch (eMLT) {}
     }
+    // v2.66 GAMBAR TIAP FRAME ala AKWeb (pisah SIM dari GAMBAR).
+    // AKWeb (ak-line-preview-renderer.js): rAF tiap frame TANPA throttle —
+    // JS tidak pernah sim ulang per frame, cuma gambar ulang path yang
+    // sudah dihitung native; mode manual cuma gambar RAY lurus 2 titik.
+    // Di sini: SIM tetap jalan di manualTick (50 ms, cuma kalau aim/power
+    // berubah) dan hasilnya di-cache S.liveFrame; GAMBAR jalan TIAP TICK
+    // tanpa throttle dari cache itu. Kalau aim sudah bergerak tapi sim
+    // belum ngejar (cache ketinggalan), gambar garis bidik manual
+    // (cue->ghost, murah, tanpa sim) supaya garis tetap instan — itu
+    // RAY-nya AKWeb. Dirty-check S.liveDrawSig: diam = tidak redraw.
+    function drawLiveFrame() {
+      try {
+        if (S.linesFrozen || S.shooting || S.linePreview === false) return;
+        var res = S.lastGetterRes;
+        if (!res || !res.balls || res.balls.length < 2) return;
+        for (var i = 0; i < res.balls.length; i++) {
+          if (Math.hypot(res.balls[i].vx || 0, res.balls[i].vy || 0) > 0.05) return;
+        }
+        var f = S.liveFrame;
+        if (S.autoBeruntun) {
+          // MAGNET: garis kunci ke pick — gambar cache plan saja, tanpa ray.
+          if (f && f.shot && f.res) {
+            var psig = 'plan:' + (f.at || 0);
+            if (psig !== S.liveDrawSig) { S.liveDrawSig = psig; drawShot(f.shot, f.res); }
+          }
+          return;
+        }
+        var mShot = null;
+        try { mShot = manualShotFromAim(res); } catch (eMS3) { mShot = null; }
+        if (!mShot) return;
+        if (f && f.shot && f.res && Math.abs(f.angle - mShot.angle) < 0.002) {
+          var dsig = 'sim:' + f.angle.toFixed(3) + '|' + Math.round(f.powerSim);
+          if (dsig !== S.liveDrawSig) { S.liveDrawSig = dsig; drawShot(f.shot, f.res); }
+        } else {
+          // Sim ketinggalan aim baru -> garis bidik manual (ray, tanpa sim).
+          var rsig = 'ray:' + mShot.angle.toFixed(3) + '|' + mShot.targetIdx;
+          if (rsig !== S.liveDrawSig) { S.liveDrawSig = rsig; drawShot(mShot, res); }
+        }
+      } catch (e) {}
+    }
     function loopTick() {
+      // v2.66: GAMBAR tiap tick tanpa throttle (ala AKWeb) — sim tetap
+      // 50 ms di bawah; gambar dari cache + ray kalau sim ketinggalan.
+      try { drawLiveFrame(); } catch (eDLF) {}
       // v2.65: garis manual tiap 50 ms — JANGAN nunggu gate baca-bola
       // 150 ms di bawah (itu penyebab delay garis). Pakai snapshot bola
       // terakhir; S.lastGetterRes kosong di awal = no-op.
@@ -4502,9 +4545,19 @@ var AKV2_VERSION = '2.65';
             }
             ctx.strokeStyle = _col; ctx.globalAlpha = 1; ctx.lineWidth = _isCue ? 4 : 5; ctx.stroke();
             var _le = sb.positions[sb.positions.length - 1], _ls = P(_le.x, _le.y);
-            ctx.beginPath(); ctx.arc(_ls[0], _ls[1], 8, 0, 7);
+            // v2.66 TITIK HENTI ala AKWeb (ue): lingkaran berisi NOMOR
+            // bola target, supaya jelas bola mana berhenti di mana.
+            // Bola lain tetap lingkaran kecil tanpa nomor.
+            var _isTgt = (tgt && sb.number === tgt.num);
+            ctx.beginPath(); ctx.arc(_ls[0], _ls[1], _isTgt ? 11 : 8, 0, 7);
             ctx.fillStyle = _col; ctx.fill();
             ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.stroke();
+            if (_isTgt) {
+              ctx.beginPath(); ctx.arc(_ls[0], _ls[1], 7, 0, 7);
+              ctx.fillStyle = '#ffffff'; ctx.fill();
+              ctx.fillStyle = '#111'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+              ctx.fillText(String(sb.number), _ls[0], _ls[1]);
+            }
           })(_simDraw.balls[_si]);
         }
       }
@@ -4538,6 +4591,18 @@ var AKV2_VERSION = '2.65';
           }
         }
         // (blok sim lama digabung ke atas: garis semua bola yang tersentuh)
+      }
+      // v2.66 POWER di canvas (ala AKWeb: power diketahui dari garis) —
+      // persen power live (rasio 0..1) di dekat bola putih. livePowerPct
+      // diisi livePreview; fallback dari simPower shot.
+      if (cue && shot) {
+        var _pct = (typeof shot.livePowerPct === 'number') ? shot.livePowerPct : Math.round(simPowerToRatio(shot.simPower || 0) * 100);
+        var _cs2 = P(cue.x, cue.y);
+        ctx.font = 'bold 14px Arial'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+        ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.85)';
+        ctx.strokeText('PWR ' + _pct + '%', _cs2[0] + 16, _cs2[1] - 14);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('PWR ' + _pct + '%', _cs2[0] + 16, _cs2[1] - 14);
       }
     }
     // v2.60 GARIS LIVE ala AKWeb — re-sim tiap tick dari aim + power
@@ -4606,6 +4671,11 @@ var AKV2_VERSION = '2.65';
         try { r2 = sim.simulate({ balls: dbs, shotAngle: liveAngle, shotPower: livePowerSim, shotSpin: { x: 0, y: 0 } }); } catch (e4) { return false; }
         if (!r2 || !r2.balls) return false;
         shot.dispRes = r2;
+        // v2.66: cache frame buat drawLiveFrame (pisah SIM dari GAMBAR,
+        // ala AKWeb — JS AKWeb tidak pernah sim ulang per frame, cuma
+        // gambar ulang path yang sudah dihitung native).
+        shot.livePowerPct = Math.round(simPowerToRatio(livePowerSim) * 100);
+        S.liveFrame = { shot: shot, res: res, angle: liveAngle, powerSim: livePowerSim, at: Date.now() };
         drawShot(shot, res);
         return true;
       } catch (e) { return false; }
