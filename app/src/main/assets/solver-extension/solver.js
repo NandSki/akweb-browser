@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         8BP AKWeb Solver Gabungan v2.63 (Getter + dynCall)
+// @name         8BP AKWeb Solver Gabungan v2.64 (Getter + dynCall)
 // @namespace    nbp
-// @version      gabungan-v2.63
-// @description  v2.63 ala AKWeb: GARIS MANUAL REALTIME — pas autoplay OFF, garis ngikutin aim + power user TIAP TICK (bukan cuma kalau bola berubah): user geser aim / nge-charge power -> garis + titik berhenti gerak tiap frame kayak cheto (livePreview throttle signature + drawShot fallback cuma kalau tembakan manualnya berubah, jadi diam tidak bikin redraw sia-sia); bola dibaca via getter dynCall + fallback scan heap + pointer tracking (tanda nomor+92/radius+48, terbukti v2.46; alamat dilacak sekali, baca O(16) tanpa sweep ulang), tembak via dynCall setAim/setPower/takeShot + fallback DRAG pointer kalau gate manager/table gagal (angka Steel tidak jalan live), commit gate + plan satu siklus, loop requestAnimationFrame + fallback timer. Binding live guest (wasm sha 6c7a33d4..): manager HEAP32[27555]/[37069], getTable 7992, getBall 24373, setter di objek cue — tervalidasi di rig meja menu; posisi + tembakan belum terbukti di match live (lobby WebSocket diblokir di rig).
+// @version      gabungan-v2.64
+// @description  v2.64 ala AKWeb: PETA POWER AFFINE (kalibrasi live Steel 2026-11-11: V(rasio) = 440*rasio - 70, dead-zone ~0.16 — peta proporsional v2.62 salah sistematis di luar tengah, itu sebabnya titik berhenti putih tidak sesuai garis) + BREAK 0.8 (bukan MAX — power 0,8 terbukti 2026-11-08, MAX 1.0 tidak pernah masuk live); tuner tetap +-3%/tembakan tapi pada slope (440, clamp 350-550); bola dibaca via getter dynCall + fallback scan heap + pointer tracking (tanda nomor+92/radius+48, terbukti v2.46; alamat dilacak sekali, baca O(16) tanpa sweep ulang), tembak via dynCall setAim/setPower/takeShot + fallback DRAG pointer kalau gate manager/table gagal (angka Steel tidak jalan live), commit gate + plan satu siklus, loop requestAnimationFrame + fallback timer. Binding live guest (wasm sha 6c7a33d4..): manager HEAP32[27555]/[37069], getTable 7992, getBall 24373, setter di objek cue — tervalidasi di rig meja menu; posisi + tembakan belum terbukti di match live (lobby WebSocket diblokir di rig).
 // @match        https://prod-web-pool.miniclip.com/*
 // @match        https://*.pool.miniclippt.com/*
 // @match        https://*.miniclip.com/*
@@ -12,7 +12,7 @@
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
-var AKV2_VERSION = '2.63';
+var AKV2_VERSION = '2.64';
 (function () {
   'use strict';
   function pageCode() {
@@ -1216,11 +1216,36 @@ var AKV2_VERSION = '2.63';
     // (diambil dari data Almarou3: CUE_PROPERTIES_MAX_POWER/SPIN, power =
     // sqrt(2*196*jarak), sweep 150..max ambil pertama yg lolos validasi,
     // kalau tidak ada yg lolos = JANGAN TEMBAK)
+    // v2.64 PETA POWER AFFINE (ganti proporsional v2.62). Kalibrasi live
+    // Steel 2026-11-11 (3 tembakan lurus rasio 0.3/0.5/0.7, v0 terukur
+    // 62/145/233, residual <=5): kecepatan game V(rasio) = 440*rasio - 70
+    // (dead-zone ~0.16), BUKAN proporsional. Peta proporsional
+    // (rasio = simPower/306) salah sistematis: power kecil (<160) live
+    // LEBIH PELAN dari sim (bola berhenti pendek dari garis), power besar
+    // (>160) live LEBIH CEPAT (bola kelewatan garis) — persis laporan live
+    // user 2026-11-11 ("autoplay ga sesuai dengan titik bola diam").
+    // Tuner tetap bekerja: slope yang di-tune (+-3%/tembakan, clamp
+    // [350,550]), arahnya sama (kurang tenaga -> slope x0.97 = rasio naik).
+    // Slope ini per-cue (Force cue beda -> slope beda); tuner mempelajari
+    // cue yang sedang dipakai dalam beberapa tembakan.
+    function simPowerToRatio(sp) {
+      var slope = S.cueSlope || 440, dead = (S.cueDead === undefined ? 70 : S.cueDead);
+      return Math.max(0, Math.min(1, ((sp || 0) + dead) / slope));
+    }
+    function ratioToSimPower(r) {
+      var slope = S.cueSlope || 440, dead = (S.cueDead === undefined ? 70 : S.cueDead);
+      return Math.max(0, (r || 0) * slope - dead);
+    }
+    function maxSimPower() {
+      var slope = S.cueSlope || 440, dead = (S.cueDead === undefined ? 70 : S.cueDead);
+      return Math.max(150, slope - dead);
+    }
     function simPowerToUI(sp) {
-      // Konversi sim->game ala Almarou3 ShotPowerToPower: game = 1-(1-s/max)^2,
-      // dipetakan ke skala drag kita 24..85.
-      var mx = S.cueMaxPower || 306;
-      var frac = 1 - Math.pow(1 - Math.max(0, Math.min(1, sp / mx)), 2);
+      // Konversi sim->game ala Almarou3 ShotPowerToPower: game = 1-(1-rasio)^2,
+      // dipetakan ke skala drag kita 24..85. v2.64: frac dari RASIO AFFINE
+      // (bukan sp/max) — bentuk kuadrat dipertahankan, yang berubah hanya
+      // sumber rasionya. Inversnya (uiPowerToRatio) tetap benar.
+      var frac = 1 - Math.pow(1 - simPowerToRatio(sp), 2);
       frac = Math.max(0, Math.min(1, frac));
       return 24 + frac * 61;
     }
@@ -1229,7 +1254,7 @@ var AKV2_VERSION = '2.63';
       var d1 = Math.hypot(cue.x - ghost[0], cue.y - ghost[1]);
       var d2 = Math.hypot(ghost[0] - pocket.x, ghost[1] - pocket.y);
       var p = Math.sqrt(2 * 196 * (d1 + d2));
-      var mx = S.cueMaxPower || 306;
+      var mx = maxSimPower();
       return Math.max(150, Math.min(mx, p));
     }
     function badFirstHit(fhn, targetNum, group) {
@@ -1251,20 +1276,20 @@ var AKV2_VERSION = '2.63';
       // jendela valid cuma ±0.25°; bola 9 -> TM gagal di +1.5°) sehingga
       // isRobustShot menolak SEMUA tembakan dan autoplay tidak pernah
       // menembak ("sim tidak valid"). Yang BENAR-BENAR tidak pasti adalah
-      // POWER: setPower berupa rasio simPower/cueMaxPower dan pemetaan
-      // rasio->kecepatan game TIDAK BOLEH salah. v2.62 KALIBRASI LIVE
+      // POWER: setPower berupa rasio affine (simPower+70)/440 dan pemetaan
+      // rasio->kecepatan game TIDAK BOLEH salah. v2.64 KALIBRASI LIVE
       // (Steel, 2026-11-11, 3 tembakan lurus rasio 0.3/0.5/0.7, v0
-      // terukur 62/145/233): kecepatan game V ≈ 440·rasio − 70, jadi
-      // cueMaxPower sebenarnya ≈ 306 (bukan 888.85) — sim v2.58-v2.61
-      // melebih-lebihkan kecepatan cue 3-4x di rentang operasi
-      // (rasio 0.3-0.5), itu sebabnya tembakan live selalu kepelan
-      // padahal sim memvalidasi pot. Klaim lama probe16 (rasio 0.6 ->
-      // bola 14 ~54 unit, sim 500 -> ~52 unit) SALAH BACA dan kini
-      // diganti angka terukur ini. Gesekan sim TERNYATA BENAR (rolling
-      // live 10.85-10.87 vs sim 10.878; sliding ~189 vs 196) — yang
-      // salah hanya skala kecepatan, bukan gesekan. (Kalibrasi rig
+      // terukur 62/145/233): kecepatan game V = 440*rasio - 70
+      // (dead-zone ~0.16). v2.62 memakai peta proporsional
+      // (rasio = simPower/306) — itu pendekatan kasar yang salah
+      // sistematis di luar tengah (power kecil live lebih pelan, power
+      // besar live lebih cepat), terbukti laporan live user 2026-11-11
+      // (titik berhenti tidak sesuai garis). v2.64 memakai peta affine
+      // penuh: rasio = (simPower+70)/440. Gesekan sim TERNYATA BENAR
+      // (rolling live 10.85-10.87 vs sim 10.878; sliding ~189 vs 196) —
+      // yang salah hanya skala kecepatan, bukan gesekan. (Kalibrasi rig
       // mengukur langsung v0 vs rasio; kalau hasilnya beda lagi,
-      // konstanta ini yang diubah, bukan rumusnya.)
+      // konstanta slope/dead ini yang diubah, bukan rumusnya.)
       // Jadi: tembakan harus tetap masuk kalau power nyata meleset ±8%.
       // validateSimRes (nominal) tetap gerbang keras — tembakan yang tidak
       // masuk di sim nominal TIDAK PERNAH divalidasi (aturan v2.41).
@@ -1489,9 +1514,14 @@ var AKV2_VERSION = '2.63';
       dx /= dl; dy /= dl;
       // Ghost ball nyata: titik tumbukan dead-center di kepala rack.
       var gx = head.x - dx * R * 2, gy = head.y - dy * R * 2;
-      var mx = S.cueMaxPower || 306;
-      try { log('💥 BREAK: lurus ke kepala rack (bola ' + head.num + ') sudut ' + (Math.atan2(dy, dx) * 180 / Math.PI).toFixed(1) + '° power MAX'); } catch (e3) {}
-      return { angle: Math.atan2(dy, dx), power: 85, simPower: mx, spin: { x: 0, y: 0 }, res: null, potted: 0,
+      // v2.64: BREAK 0.8, BUKAN MAX. Power 0.8 TERBUKTI 2026-11-08
+      // (break theta=0 power 0,8 berhasil, rack buyar + ada yang masuk);
+      // MAX 1.0 tidak pernah masuk live (laporan user 2026-11-11) —
+      // terlalu keras, bola memantul keluar saku + sebaran rack liar.
+      // simPower = 0.8*440-70 = 282 (peta affine).
+      var _brSim = ratioToSimPower(0.8);
+      try { log('💥 BREAK: lurus ke kepala rack (bola ' + head.num + ') sudut ' + (Math.atan2(dy, dx) * 180 / Math.PI).toFixed(1) + '° power 0.8 (terbukti 2026-11-08)'); } catch (e3) {}
+      return { angle: Math.atan2(dy, dx), power: simPowerToUI(_brSim), simPower: _brSim, spin: { x: 0, y: 0 }, res: null, potted: 0,
                targetIdx: headIdx, ghost: [gx, gy], pocket: { x: head.x, y: head.y },
                simRes: null, validated: true, isBreak: true };
     }
@@ -1507,10 +1537,12 @@ var AKV2_VERSION = '2.63';
       return false;
     }
     function saveCue() {
-      try { localStorage.setItem('akv2cue', String(S.cueMaxPower)); } catch (e) {}
+      // v2.64: key baru 'akv2cueslope' — nilai lama 'akv2cue' memakai
+      // skala proporsional (306) yang artinya beda total; tidak dibaca.
+      try { localStorage.setItem('akv2cueslope', String(S.cueSlope)); } catch (e) {}
       try { localStorage.setItem('akv2cueauto', S.cueAuto ? '1' : '0'); } catch (e2) {}
       var el = $('akv2CueVal');
-      if (el) el.textContent = S.cueMaxPower + (S.cueAuto ? ' AUTO' : ' MAN');
+      if (el) el.textContent = S.cueSlope + (S.cueAuto ? ' AUTO' : ' MAN');
     }
     // v2.58: CUE AUTO-TUNE KONVERGEN (ganti sawtooth v2.2). Dulu: masuk
     // -> max +5 (dilemahkan), nyaris-masuk -> max -25 — jadi max
@@ -1519,7 +1551,7 @@ var AKV2_VERSION = '2.63';
     // pendek (progress > 0.4) = max x0.97 (lebih kuat); KELEWATAN
     // pocket (along-track melewati pocket > 10 unit) = max x1.03
     // (lebih lembut); meleset jauh = masalah aim, jangan ubah max.
-    // Langkah multiplikatif +-3%, clamp [200, 500] — konvergen ke
+    // Langkah multiplikatif +-3%, clamp slope [350, 550] — konvergen ke
     // nilai benar, bukan osilasi.
     function tuneCuePower(preRes, postRes, shot) {
       if (!S.cueAuto || !shot || !shot.simPower || !preRes || !preRes.balls || !postRes || !postRes.balls) return;
@@ -1551,15 +1583,15 @@ var AKV2_VERSION = '2.63';
           var actTravel = Math.hypot(cuePost.x - cuePre.x, cuePost.y - cuePre.y);
           if (predTravel > 10) {
             if (actTravel < predTravel * 0.7) {
-              S.cueMaxPower = Math.max(200, S.cueMaxPower * 0.97);
+              S.cueSlope = Math.max(350, S.cueSlope * 0.97);
               saveCue();
-              log('CUE AUTO: max=' + S.cueMaxPower.toFixed(1) + ' (putih berhenti ' + actTravel.toFixed(0) + ' vs prediksi ' + predTravel.toFixed(0) + ' unit — kurang tenaga, titik berhenti tidak sampai garis)');
+              log('CUE AUTO: slope=' + S.cueSlope.toFixed(1) + ' (putih berhenti ' + actTravel.toFixed(0) + ' vs prediksi ' + predTravel.toFixed(0) + ' unit — kurang tenaga, titik berhenti tidak sampai garis)');
               return;
             }
             if (actTravel > predTravel * 1.3) {
-              S.cueMaxPower = Math.min(500, S.cueMaxPower * 1.03);
+              S.cueSlope = Math.min(550, S.cueSlope * 1.03);
               saveCue();
-              log('CUE AUTO: max=' + S.cueMaxPower.toFixed(1) + ' (putih melaju ' + actTravel.toFixed(0) + ' vs prediksi ' + predTravel.toFixed(0) + ' unit — terlalu kuat)');
+              log('CUE AUTO: slope=' + S.cueSlope.toFixed(1) + ' (putih melaju ' + actTravel.toFixed(0) + ' vs prediksi ' + predTravel.toFixed(0) + ' unit — terlalu kuat)');
               return;
             }
           }
@@ -1574,7 +1606,7 @@ var AKV2_VERSION = '2.63';
       // v2.58: MASUK = power sudah pas -> max TIDAK BERUBAH. Dulu +5 di
       // sini (melemahkan) adalah separuh sawtooth: tiap bola masuk
       // menggeser semua rasio power berikutnya.
-      if (!postTgt) { log('CUE AUTO: bola masuk, max tetap ' + S.cueMaxPower); return; }
+      if (!postTgt) { log('CUE AUTO: bola masuk, slope tetap ' + S.cueSlope); return; }
       var pk = shot.pocket;
       if (!pk) return;
       var d0 = Math.hypot(preTgt.x - pk.x, preTgt.y - pk.y);
@@ -1589,16 +1621,16 @@ var AKV2_VERSION = '2.63';
         var ux = (pk.x - preTgt.x) / d0, uy = (pk.y - preTgt.y) / d0;
         var along = (postTgt.x - preTgt.x) * ux + (postTgt.y - preTgt.y) * uy;
         if (along > d0 + 10) {
-          S.cueMaxPower = Math.min(500, S.cueMaxPower * 1.03);
+          S.cueSlope = Math.min(550, S.cueSlope * 1.03);
           saveCue();
-          log('CUE AUTO: max=' + S.cueMaxPower.toFixed(1) + ' (bola KELEWATAN pocket ' + (along - d0).toFixed(1) + ' unit, kurangi tenaga)');
+          log('CUE AUTO: slope=' + S.cueSlope.toFixed(1) + ' (bola KELEWATAN pocket ' + (along - d0).toFixed(1) + ' unit, kurangi tenaga)');
           return;
         }
       }
       if (progress > 0.4) {
-        S.cueMaxPower = Math.max(200, S.cueMaxPower * 0.97);
+        S.cueSlope = Math.max(350, S.cueSlope * 0.97);
         saveCue();
-        log('CUE AUTO: max=' + S.cueMaxPower.toFixed(1) + ' (bola kurang sampai ke pocket, tambah tenaga)');
+        log('CUE AUTO: slope=' + S.cueSlope.toFixed(1) + ' (bola kurang sampai ke pocket, tambah tenaga)');
       }
       // v2.58: meleset jauh (progress kecil, tidak overshoot) = masalah
       // aim, bukan tenaga -> max tidak diubah.
@@ -1858,7 +1890,7 @@ var AKV2_VERSION = '2.63';
       var spin = { x: 0, y: 0 };
       if (spinKnown && (manualSpin.x !== 0 || manualSpin.y !== 0)) spin = manualSpin;
       var spinManual = (spin.x !== 0 || spin.y !== 0);
-      var mx = S.cueMaxPower || 306;
+      var mx = maxSimPower();
       // v2.59 TOP MIX: sim tidak boleh cuma mencoba 3 direct teratas —
       // kalau ketiganya gagal, bank/kick/combo yang valid tidak pernah
       // dicoba ("ga nemu lobang" padahal ada jalan alternatif — defect
@@ -1911,10 +1943,10 @@ var AKV2_VERSION = '2.63';
         // valid, bukan di tepi lembut. Sweep naik 150.. mengambil power
         // PALING LEMBUT yang lolos = tepi jendela, rapuh terhadap selisih
         // skala sim-vs-game (v2.62: skala sudah terkalibrasi live,
-        // cueMaxPower 306).
+        // maxSim 370).
         // Kalau power fisika tidak lolos / tidak robust, sweep naik seperti dulu.
         // v2.62 MARGIN KECIL: skala power sudah benar (kalibrasi live
-        // cueMaxPower 306), jadi sweep cukup coba 1.1x power fisika
+        // maxSim 370), jadi sweep cukup coba 1.1x power fisika
         // dulu (sisa kecepatan untuk masuk saku), lalu power fisika.
         // Margin 1.25x v2.61 dicabut — dengan skala yang benar, 1.25x
         // kebanyakan dan kandidatnya sering ditolak validasi sim.
@@ -2091,7 +2123,7 @@ var AKV2_VERSION = '2.63';
     var IS_PROD = (location.hostname === 'prod-web-pool.miniclip.com' || /\.pool\.miniclippt\.com$/.test(location.hostname));
     var S = { mode: 'off', group: null, gameMode: '8', allowBank: true, deteksiOtomatis: true, shooting: false, lastScan: null, lastShot: null, lastCanvas: null, autoBeruntun: true, autoUserOff: false, autoStableCount: 0, diagTick: 0, autoTickCount: 0, stillSince: 0, stillLastBalls: null, holdReason: '', lastPick: null, lastShot: null, diagGate: null, diagGateAt: 0, autoLastBalls: null, autoWaiting: false, autoPreShotNums: null, calMode: false, calSel: 0, nudgeStep: 4, useSim: true, camMode: false, camSel: 0, camDetected: null,
       // v2.1: statistik cue (ala Almarou3: CUE_PROPERTIES_MAX_POWER & CUE_PROPERTIES_SPIN)
-      cueMaxPower: 306, cueSpinMult: 1.0, spinX: 0, spinY: 0, cueMaxLive: null, englishKnown: false,
+      cueSlope: 440, cueDead: 70, cueSpinMult: 1.0, spinX: 0, spinY: 0, cueMaxLive: null, englishKnown: false,
       // v2.2: CUE AUTO-TUNE — tidak perlu setting manual, belajar dari hasil tembakan
       cueAuto: true, tunePre: null, tuneShot: null,
       // v2.1: autoplay kontinu — tidak pernah auto-off
@@ -2136,7 +2168,7 @@ var AKV2_VERSION = '2.63';
       p.id = 'akv2';
       p.style.cssText = 'position:fixed;top:68px;right:8px;z-index:2147483000;touch-action:manipulation;-webkit-tap-highlight-color:transparent;width:300px;max-height:92vh;overflow-y:auto;background:#FFF6E5;color:#111;font:bold 13px Arial,sans-serif;padding:10px;border:3px solid #111;border-radius:12px;box-shadow:4px 4px 0 #111;box-sizing:border-box';
       p.innerHTML =
-        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.63</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">getter dynCall + scan heap fallback + pointer tracking + tembak dynCall + drag fallback ala AKWeb. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
+        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.64</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">getter dynCall + scan heap fallback + pointer tracking + tembak dynCall + drag fallback ala AKWeb. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
         '<button id="akv2LinePreview" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#E1BEE7;box-shadow:2px 2px 0 #111;margin-top:8px">🎯 LINE PREVIEW: ON</button>' +
         '<button id="akv2AutoplayBtn" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#59D977;box-shadow:2px 2px 0 #111;margin-top:6px">▶️ AUTO PLAY: OFF</button>' +
         '<button id="akv2MatchBaru" style="width:100%;min-height:46px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF9800;color:#fff;box-shadow:2px 2px 0 #111;margin-top:6px">🔄 MATCH BARU</button>' +
@@ -2207,7 +2239,7 @@ var AKV2_VERSION = '2.63';
         '<button id="akv2Bank" style="width:100%;min-height:42px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#59D977;box-shadow:2px 2px 0 #111;margin-top:6px">PANTUL: FALLBACK</button>' +
         '<div style="display:flex;gap:4px;margin-top:6px;align-items:center">' +
         '<span style="font-size:11px;font-weight:bold">⚡CUE:</span>' +
-        '<span id="akv2CueVal" style="flex:1;text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:14px">306 AUTO</span>' +
+        '<span id="akv2CueVal" style="flex:1;text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:14px">440 AUTO</span>' +
         '<button id="akv2CueMin" style="flex:1;min-height:36px;font-weight:bold;border:2px solid #111;border-radius:8px;background:#fff">−</button>' +
         '<button id="akv2CuePlus" style="flex:1;min-height:36px;font-weight:bold;border:2px solid #111;border-radius:8px;background:#fff">+</button>' +
         '<button id="akv2CueAuto" style="flex:1;min-height:36px;font-weight:bold;border:2px solid #111;border-radius:8px;background:#59D977">AUTO</button></div>' +
@@ -2423,32 +2455,29 @@ var AKV2_VERSION = '2.63';
       });
       // v2.2: CUE AUTO-TUNE — default otomatis belajar sendiri dari hasil
       // tembakan, tidak perlu setting manual. -/+ = override manual (AUTO mati).
-      var CUE_KEY = 'akv2cue', CUE_AUTO_KEY = 'akv2cueauto';
+      var CUE_KEY = 'akv2cueslope', CUE_AUTO_KEY = 'akv2cueauto';
       try {
         var _cs = null, _ca = null;
         try { _cs = localStorage.getItem(CUE_KEY); _ca = localStorage.getItem(CUE_AUTO_KEY); } catch (e0) {}
-        // v2.62 MIGRASI SKALA: nilai tersimpan dari v2.61 ke bawah
-        // memakai skala lama (888.85, ~3x terlalu besar). Kalau nilai
-        // tersimpan > 400, itu skala lama — reset ke default baru 306
-        // (kalibrasi live 2026-11-11). Tanpa migrasi ini, tuner harus
-        // merangkak turun dari 888 dan semua tembakan tetap kepelan.
+        // v2.64: key baru — nilai 'akv2cue' lama (skala proporsional
+        // 306 / 888) artinya beda total dan TIDAK dibaca; slope mulai
+        // dari default kalibrasi 440, tuner yang menyesuaikan.
         if (_cs) {
-          var _cv = parseInt(_cs, 10) || 306;
-          if (_cv > 400) { _cv = 306; log('CUE: nilai lama ' + _cs + ' (skala 888) direset ke 306 (kalibrasi live)'); }
-          S.cueMaxPower = Math.max(200, Math.min(500, _cv));
+          var _cv = parseInt(_cs, 10) || 440;
+          S.cueSlope = Math.max(350, Math.min(550, _cv));
         }
         if (_ca === '0') S.cueAuto = false;
         saveCue();
       } catch (e0b) {}
       $('akv2CueMin').addEventListener('click', function () {
-        S.cueMaxPower = Math.max(200, S.cueMaxPower - 20);
+        S.cueSlope = Math.max(350, S.cueSlope - 20);
         S.cueAuto = false; saveCue();
-        log('CUE manual = ' + S.cueMaxPower + ' (AUTO mati; tekan AUTO untuk belajar otomatis lagi)');
+        log('CUE manual slope = ' + S.cueSlope + ' (AUTO mati; tekan AUTO untuk belajar otomatis lagi)');
       });
       $('akv2CuePlus').addEventListener('click', function () {
-        S.cueMaxPower = Math.min(500, S.cueMaxPower + 20);
+        S.cueSlope = Math.min(550, S.cueSlope + 20);
         S.cueAuto = false; saveCue();
-        log('CUE manual = ' + S.cueMaxPower + ' (AUTO mati; tekan AUTO untuk belajar otomatis lagi)');
+        log('CUE manual slope = ' + S.cueSlope + ' (AUTO mati; tekan AUTO untuk belajar otomatis lagi)');
       });
       $('akv2CueAuto').addEventListener('click', function () {
         S.cueAuto = true; saveCue();
@@ -3214,12 +3243,12 @@ var AKV2_VERSION = '2.63';
     function buildPlan(autoRes, shot) {
       // Plan terikat SATU siklus: satu tembakan per plan; tablePointer /
       // shotId (contextHash posisi bola) berubah -> plan batal.
-      var planId = 'p263-' + (++S.planCounter) + '-' + Date.now().toString(36);
+      var planId = 'p264-' + (++S.planCounter) + '-' + Date.now().toString(36);
       var cue = null, tgt = null;
       for (var i = 0; i < autoRes.balls.length; i++) if (autoRes.balls[i].num === 0) cue = autoRes.balls[i];
       if (shot && shot.targetIdx >= 0) tgt = autoRes.balls[shot.targetIdx];
       var powerRatio = 0;
-      try { powerRatio = Math.max(0, Math.min(1, (shot.simPower || 0) / (S.cueMaxPower || 306))); } catch (e) {}
+      try { powerRatio = simPowerToRatio(shot.simPower || 0); } catch (e) {}
       if (!powerRatio && shot && shot.power) powerRatio = uiPowerToRatio(shot.power);
       // v2.58 SPIN: plan membawa english [x,y] pilihan solver (default
       // (0,0)). Kalau setter english build ini belum diketahui
@@ -3235,7 +3264,7 @@ var AKV2_VERSION = '2.63';
         nominatedPocket: shot && shot.pocket ? { x: shot.pocket.x, y: shot.pocket.y } : null,
         cuePtr: cue ? cue.ptr : 0, module: autoRes.module, buffer: autoRes.buffer, used: false, createdAt: Date.now() };
       S.currentPlan = plan;
-      try { sessionStorage.setItem('akv2plan263', JSON.stringify({ planId: plan.planId, tablePointer: plan.tablePointer, shotId: plan.shotId, target: plan.target, angle: plan.angle, powerRatio: plan.powerRatio })); } catch (e) {}
+      try { sessionStorage.setItem('akv2plan264', JSON.stringify({ planId: plan.planId, tablePointer: plan.tablePointer, shotId: plan.shotId, target: plan.target, angle: plan.angle, powerRatio: plan.powerRatio })); } catch (e) {}
       log('PLAN ' + plan.planId + ' target=' + plan.target + ' angle=' + (plan.angle * 180 / Math.PI).toFixed(1) + ' powerRatio=' + plan.powerRatio.toFixed(2) + ' spin=(' + spin.x.toFixed(2) + ',' + spin.y.toFixed(2) + ')' + ' shotId=' + plan.shotId);
       return plan;
     }
@@ -3243,7 +3272,7 @@ var AKV2_VERSION = '2.63';
     function clearPlan(why) {
       if (S.currentPlan) log('PLAN batal: ' + (why || ''));
       S.currentPlan = null;
-      try { sessionStorage.removeItem('akv2plan263'); } catch (e) {}
+      try { sessionStorage.removeItem('akv2plan264'); } catch (e) {}
     }
     // v2.58: baca SATU field gate AKWeb via dynCall_iii [func, recv, sel].
     // {ok:true, value} kalau panggilan berhasil + angka; {ok:false} kalau
@@ -3645,7 +3674,7 @@ var AKV2_VERSION = '2.63';
         // sini adalah state pre-charge yang benar.
         var g3 = readCommitState(plan);
         if (!g3.ok) { S.lastGateFail = g3.failed.slice(); S.lastGateReasons = g3.reasons.slice(); log('COMMIT ABANDONED (gate akhir): ' + g3.reasons.join(' ; ')); stat('GATE GAGAL [' + g3.failed.join(',') + '] — tembak dynCall ditahan'); return false; }
-        // Langkah 4 — setPower (powerRatio 0..1 dari simPower/cueMaxPower).
+        // Langkah 4 — setPower (powerRatio 0..1 dari peta affine).
         if (!akSetDouble(M, cueObj, AKV2_LIVE.setPowerSlot, AKV2_LIVE.setPowerSel, plan.powerRatio, 'setPower')) {
           return abandon('setter-failed', 'setPower gagal');
         }
@@ -4136,7 +4165,7 @@ var AKV2_VERSION = '2.63';
           angle: angle,
           ghost: [gx, gy],
           power: uiPower,
-          simPower: 150 + (powerUI/100) * 156, // 150-306 (skala kalibrasi v2.62)
+          simPower: 150 + (powerUI/100) * (maxSimPower() - 150), // 150..maxSim (peta affine v2.64: max = slope-dead = 370)
           targetIdx: -1,
           validated: true
         };
@@ -4548,7 +4577,7 @@ var AKV2_VERSION = '2.63';
                 var gAn = akGetDouble(M, AKV2_LIVE.aimAngleSlot, cueObj, AKV2_LIVE.aimAngleSel);
                 if (gAn.ok && isFinite(gAn.value) && gAn.value >= -0.01 && gAn.value <= Math.PI * 2 + 0.01) liveAngle = gAn.value;
                 var gPw = akGetDouble(M, AKV2_LIVE.powerSlot, cueObj, AKV2_LIVE.powerSel);
-                if (gPw.ok && isFinite(gPw.value) && gPw.value > 0.01 && gPw.value <= 1.01) livePowerSim = Math.min(1, gPw.value) * (S.cueMaxPower || 306);
+                if (gPw.ok && isFinite(gPw.value) && gPw.value > 0.01 && gPw.value <= 1.01) livePowerSim = ratioToSimPower(Math.min(1, gPw.value));
               }
             }
           } catch (e) {}
@@ -4827,7 +4856,7 @@ var AKV2_VERSION = '2.63';
         if (S.autoBeruntun && S.holdReason) lines.push('TAHAN (keputusan autoplay): ' + S.holdReason);
         var gs = (g.gs !== undefined) ? ('gs=' + g.gs + ' pt=' + g.pt + ' ws=' + g.ws + ' wd=' + g.wd + ' ia=' + g.ia + ' pm=' + g.pm + ' aa=' + g.aa + ' pa=' + g.pa) : 'gate belum ter-probe';
         lines.push('GATE ' + gs + (g.mgrOk === false ? ' | MANAGER INVALID gm=' + g.gm + ' mm=' + g.mm : '') + (S.matchResult ? ' | MATCH=' + S.matchResult : ''));
-        lines.push('CUE max=' + S.cueMaxPower + (S.cueMaxLive ? ' (live game: ' + S.cueMaxLive.toFixed(1) + ')' : ' (live belum terbaca)') + (S.cueAuto ? ' AUTO' : ' MAN'));
+        lines.push('CUE slope=' + S.cueSlope + ' dead=' + S.cueDead + ' maxSim=' + maxSimPower() + (S.cueMaxLive ? ' (probe live: ' + S.cueMaxLive.toFixed(1) + ')' : ' (probe belum terbaca)') + (S.cueAuto ? ' AUTO' : ' MAN'));
         if (S.lastGateFail && S.lastGateFail.length) lines.push('GATE TERAKHIR GAGAL [' + S.lastGateFail.join(',') + '] ' + (S.lastGateReasons ? S.lastGateReasons.join(' ; ') : ''));
         var pk = S.lastPick;
         if (pk) lines.push('PICK bola ' + (pk.target === null ? '?' : pk.target) + (pk.pocket ? ' → ' + pk.pocket : '') + ' | validated ' + (pk.validated ? 'YA' : 'TIDAK') + ' | ' + (pk.reason || ''));
@@ -4844,19 +4873,19 @@ var AKV2_VERSION = '2.63';
     // akal sebagai kecepatan sim (200..500, skala kalibrasi v2.62),
     // nilainya masuk akal; kalau di luar itu (misalnya ternyata
     // satuannya offset drag, bukan kecepatan), DIABAIKAN dan default
-    // 306 tetap dipakai. Dibaca 1/detik bareng probeGateValues.
+    // Slope 440 tetap dipakai (probe display-only). Dibaca 1/detik bareng probeGateValues.
     // (cue+176) adalah offset ivar LANGSUNG (tanpa geser +4 — geser itu
     // khusus struct bola; setter setPower menyimpan rasio di (cue+8),
     // terverifikasi via oracle di rig probe16.) CATATAN v2.62: kalau
-    // probe ini suatu hari membaca ~300, itu KONFIRMASI independen
-    // skala kalibrasi (cueMaxPower 306); sejauh ini selalu null.
-    // v2.61: probe ini DISPLAY-ONLY — TIDAK LAGI menimpa S.cueMaxPower.
+    // probe ini suatu hari membaca ~370-440, itu KONFIRMASI independen
+    // peta affine (maxSim 370 / slope 440); sejauh ini selalu null.
+    // v2.61: probe ini DISPLAY-ONLY — TIDAK LAGI menimpa S.cueSlope.
     // Alasan: offset heap mentah (cue+176) adalah kelas yang SAMA dengan
     // yang merusak readback v2.58 (mPower ternyata di (cue+12), bukan
     // (cue+8)); kalau nilai live-nya salah (mis. 1100), dia mendorong
-    // max NAIK -> semua rasio mengecil -> tembakan sistematis KEPELAN,
-    // dan dia MELAWAN tuner (tuner menurunkan max, probe menaikkan lagi
-    // tiap detik). Satu-satunya penulis cueMaxPower sekarang adalah
+    // slope NAIK -> semua rasio mengecil -> tembakan sistematis KEPELAN,
+    // dan dia MELAWAN tuner (tuner menurunkan slope, probe menaikkan lagi
+    // tiap detik). Satu-satunya penulis slope sekarang adalah
     // tuneCuePower (belajar dari hasil tembakan nyata). Nilai live tetap
     // ditampilkan di DIAG (baris CUE) untuk diagnosis.
     function probeCueMaxPower(M, cueObj) {
@@ -4874,8 +4903,8 @@ var AKV2_VERSION = '2.63';
         if (!isFinite(live) || live <= 0) return;
         var changed = (S.cueMaxLive !== live);
         S.cueMaxLive = live;
-        if ((live < 200 || live > 500) && changed) {
-          log('CUE MAX LIVE: game bilang ' + live.toFixed(1) + ' — di luar rentang kecepatan (200..500), diabaikan (pakai ' + S.cueMaxPower + ')');
+        if ((live < 350 || live > 550) && changed) {
+          log('CUE MAX LIVE: game bilang ' + live.toFixed(1) + ' — di luar rentang slope (350..550), diabaikan (pakai ' + S.cueSlope + ')');
         }
       } catch (e) {}
     }
@@ -5258,7 +5287,7 @@ var AKV2_VERSION = '2.63';
         if (!shot) {
           try { log('💥 BREAK fallback: tembak lurus power MAX'); } catch (eB2) {}
           shot = pickShot(autoRes.balls, autoRes.pockets, autoRes.radius, S.group, S.allowBank, autoRes.pocketWidth);
-          if (shot) { shot.power = 85; shot.simPower = S.cueMaxPower || 306; }
+          if (shot) { var _br2 = ratioToSimPower(0.8); shot.power = simPowerToUI(_br2); shot.simPower = _br2; }
         }
       } else {
         shot = pickShot(autoRes.balls, autoRes.pockets, autoRes.radius, S.group, S.allowBank, autoRes.pocketWidth);

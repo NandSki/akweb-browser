@@ -10,8 +10,8 @@ android {
         applicationId = "com.akweb.browser"
         minSdk = 26
         targetSdk = 34
-        versionCode = 18
-        versionName = "0.1.17-review"
+        versionCode = 19
+        versionName = "0.1.18-review"
         // Ringankan APK: Redmi 13C (Helio G85) itu ARM 64-bit, jadi cukup
         // lib arm64-v8a. Tanpa filter, APK ikut membawa lib x86_64
         // (emulator, ~185 MB) dan armeabi-v7a (32-bit, ~130 MB) yang
