@@ -21,8 +21,31 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // 2026-11-11: kunci debug PERSISTEN — keystore/akweb-debug.p12
+            // (dibuat sekali, di-commit ke repo private ini). Sebelum ini
+            // assembleDebug pakai debug key bawaan runner CI yang dibuat
+            // baru tiap run, jadi tiap versi APK punya kunci beda dan
+            // Android menolak install menimpa versi lama (user harus
+            // uninstall dulu). Dengan kunci ini, semua versi ke depan
+            // pakai tanda tangan yang sama -> tinggal timpa. Catatan:
+            // ini kunci DEBUG (password standar "android"), bukan kunci
+            // rilis — aman di-commit ke repo private. Sidik jari SHA-256
+            // sertifikat: 4D:E0:EA:6E:28:98:5D:0D:48:61:8C:B6:EE:4B:62:04:
+            // 24:E4:09:EB:7A:35:E1:8B:07:11:A3:1C:A5:96:55:C3.
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             minifyEnabled = false
+        }
+    }
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("../keystore/akweb-debug.p12")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+            storeType = "PKCS12"
         }
     }
     compileOptions {
