@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         8BP AKWeb Solver Gabungan v2.59 (Getter + dynCall)
+// @name         8BP AKWeb Solver Gabungan v2.60 (Getter + dynCall)
 // @namespace    nbp
-// @version      gabungan-v2.59
-// @description  v2.59 ala AKWeb: power ikut garis (physics-power dulu sebelum sweep) + pickShot fase bank/kick/combo yang benar-benar dicoba + combo cue->A->B->saku; bola dibaca via getter dynCall + fallback scan heap + pointer tracking (tanda nomor+92/radius+48, terbukti v2.46; alamat dilacak sekali, baca O(16) tanpa sweep ulang), tembak via dynCall setAim/setPower/takeShot + fallback DRAG pointer kalau gate manager/table gagal (angka Steel tidak jalan live), commit gate + plan satu siklus, loop requestAnimationFrame + fallback timer. Binding live guest (wasm sha 6c7a33d4..): manager HEAP32[27555]/[37069], getTable 7992, getBall 24373, setter di objek cue — tervalidasi di rig meja menu; posisi + tembakan belum terbukti di match live (lobby WebSocket diblokir di rig).
+// @version      gabungan-v2.60
+// @description  v2.60 ala AKWeb: NUSUK BENERAN (commit tidak lagi abandon sesudah setPower — gate g3 pindah sebelum setPower, readback pakai getter method + toleransi, cue tidak pernah tertinggal ke-charge) + garis LIVE ala AKWeb (re-sim tiap tick dari aim/power game, prediksi titik berhenti ngikutin power); bola dibaca via getter dynCall + fallback scan heap + pointer tracking (tanda nomor+92/radius+48, terbukti v2.46; alamat dilacak sekali, baca O(16) tanpa sweep ulang), tembak via dynCall setAim/setPower/takeShot + fallback DRAG pointer kalau gate manager/table gagal (angka Steel tidak jalan live), commit gate + plan satu siklus, loop requestAnimationFrame + fallback timer. Binding live guest (wasm sha 6c7a33d4..): manager HEAP32[27555]/[37069], getTable 7992, getBall 24373, setter di objek cue — tervalidasi di rig meja menu; posisi + tembakan belum terbukti di match live (lobby WebSocket diblokir di rig).
 // @match        https://prod-web-pool.miniclip.com/*
 // @match        https://*.pool.miniclippt.com/*
 // @match        https://*.miniclip.com/*
@@ -12,7 +12,7 @@
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
-var AKV2_VERSION = '2.59';
+var AKV2_VERSION = '2.60';
 (function () {
   'use strict';
   function pageCode() {
@@ -2079,7 +2079,7 @@ var AKV2_VERSION = '2.59';
       p.id = 'akv2';
       p.style.cssText = 'position:fixed;top:68px;right:8px;z-index:2147483000;touch-action:manipulation;-webkit-tap-highlight-color:transparent;width:300px;max-height:92vh;overflow-y:auto;background:#FFF6E5;color:#111;font:bold 13px Arial,sans-serif;padding:10px;border:3px solid #111;border-radius:12px;box-shadow:4px 4px 0 #111;box-sizing:border-box';
       p.innerHTML =
-        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.59</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">getter dynCall + scan heap fallback + pointer tracking + tembak dynCall + drag fallback ala AKWeb. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
+        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.60</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">getter dynCall + scan heap fallback + pointer tracking + tembak dynCall + drag fallback ala AKWeb. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
         '<button id="akv2LinePreview" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#E1BEE7;box-shadow:2px 2px 0 #111;margin-top:8px">🎯 LINE PREVIEW: ON</button>' +
         '<button id="akv2AutoplayBtn" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#59D977;box-shadow:2px 2px 0 #111;margin-top:6px">▶️ AUTO PLAY: OFF</button>' +
         '<button id="akv2MatchBaru" style="width:100%;min-height:46px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF9800;color:#fff;box-shadow:2px 2px 0 #111;margin-top:6px">🔄 MATCH BARU</button>' +
@@ -2657,6 +2657,11 @@ var AKV2_VERSION = '2.59';
       setAimSlot: 26469, setAimSel: 8402899,
       setPowerSlot: 26470, setPowerSel: 8402950,
       takeShotSlot: 7945, takeShotSel: 2400642,
+      // v2.60 GETTER double (SRET, MCNumber) untuk readback + live
+      // preview: aimAngle 26468/sel 8402869, power 26520/sel 8402944.
+      // Dipakai readbackShot (ganti baca heap mentah) + livePreview.
+      aimAngleSlot: 26468, aimAngleSel: 8402869,
+      powerSlot: 26520, powerSel: 8402944,
       // Receiver cue untuk killAnimation / resetInput.
       killAnimSlot: 26483, killAnimSel: 8408391,
       resetInputSlot: 26509, resetInputSel: 8409356,
@@ -2712,6 +2717,11 @@ var AKV2_VERSION = '2.59';
       setAimSlot: 45300, setAimSel: 14546803,
       setPowerSlot: 45301, setPowerSel: 14546854,
       takeShotSlot: 13526, takeShotSel: 5030408,
+      // v2.60 GETTER double (SRET, MCNumber): aimAngle 45299/sel
+      // 14546773; power 45351 tapi SELECTOR belum diketahui (—) ->
+      // powerSel 0 = readback power di-skip di build ini (jangan gagal).
+      aimAngleSlot: 45299, aimAngleSel: 14546773,
+      powerSlot: 45351, powerSel: 0,
       // Receiver cue untuk killAnimation / resetInput.
       killAnimSlot: 45314, killAnimSel: 14552295,
       resetInputSlot: 45340, resetInputSel: 14553260,
@@ -3138,7 +3148,7 @@ var AKV2_VERSION = '2.59';
     function buildPlan(autoRes, shot) {
       // Plan terikat SATU siklus: satu tembakan per plan; tablePointer /
       // shotId (contextHash posisi bola) berubah -> plan batal.
-      var planId = 'p259-' + (++S.planCounter) + '-' + Date.now().toString(36);
+      var planId = 'p260-' + (++S.planCounter) + '-' + Date.now().toString(36);
       var cue = null, tgt = null;
       for (var i = 0; i < autoRes.balls.length; i++) if (autoRes.balls[i].num === 0) cue = autoRes.balls[i];
       if (shot && shot.targetIdx >= 0) tgt = autoRes.balls[shot.targetIdx];
@@ -3159,7 +3169,7 @@ var AKV2_VERSION = '2.59';
         nominatedPocket: shot && shot.pocket ? { x: shot.pocket.x, y: shot.pocket.y } : null,
         cuePtr: cue ? cue.ptr : 0, module: autoRes.module, buffer: autoRes.buffer, used: false, createdAt: Date.now() };
       S.currentPlan = plan;
-      try { sessionStorage.setItem('akv2plan259', JSON.stringify({ planId: plan.planId, tablePointer: plan.tablePointer, shotId: plan.shotId, target: plan.target, angle: plan.angle, powerRatio: plan.powerRatio })); } catch (e) {}
+      try { sessionStorage.setItem('akv2plan260', JSON.stringify({ planId: plan.planId, tablePointer: plan.tablePointer, shotId: plan.shotId, target: plan.target, angle: plan.angle, powerRatio: plan.powerRatio })); } catch (e) {}
       log('PLAN ' + plan.planId + ' target=' + plan.target + ' angle=' + (plan.angle * 180 / Math.PI).toFixed(1) + ' powerRatio=' + plan.powerRatio.toFixed(2) + ' spin=(' + spin.x.toFixed(2) + ',' + spin.y.toFixed(2) + ')' + ' shotId=' + plan.shotId);
       return plan;
     }
@@ -3167,7 +3177,7 @@ var AKV2_VERSION = '2.59';
     function clearPlan(why) {
       if (S.currentPlan) log('PLAN batal: ' + (why || ''));
       S.currentPlan = null;
-      try { sessionStorage.removeItem('akv2plan259'); } catch (e) {}
+      try { sessionStorage.removeItem('akv2plan260'); } catch (e) {}
     }
     // v2.58: baca SATU field gate AKWeb via dynCall_iii [func, recv, sel].
     // {ok:true, value} kalau panggilan berhasil + angka; {ok:false} kalau
@@ -3180,6 +3190,42 @@ var AKV2_VERSION = '2.59';
         var v = Reflect.apply(d.fn, d.self, [func, recv, sel]);
         if (typeof v !== 'number' || !isFinite(v)) return { ok: false };
         return { ok: true, value: v };
+      } catch (e) { return { ok: false }; }
+    }
+    // v2.60 GETTER DOUBLE (SRET, MCNumber) — baca aimAngle/power via
+    // METHOD, bukan dari heap mentah. Alasan (regresi v2.58 "cuma
+    // nge-power ga nusuk"): readbackShot lama membaca mPower dari heap
+    // di (cue+8), padahal aturan +4 ivar yang TERBUKTI untuk bola
+    // (runtime = ivar + 4) menaruh mPower di (cue+12) — baca +8 dapat
+    // pointer mVisualGuide sebagai f64 sampah -> readback SELALU gagal
+    // -> commit abandon sesudah setPower -> cue tertinggal ke-charge,
+    // tidak pernah takeShot. Method getter tahu offset-nya sendiri,
+    // jadi kebal terhadap tebak-tebakan +8 vs +12.
+    // Konvensi SRET-FIRST (outPtr dulu): malloc 16, isi sentinel NaN,
+    // panggil [slot, outPtr, recv, sel], baca f64 di outPtr. Sentinel
+    // NaN membedakan "getter tidak menulis" (skip, bukan gagal) dari
+    // "getter menulis 0". Nilai di luar jangkauan masuk akal juga
+    // dianggap tidak terbaca. Throw apa pun -> {ok:false}.
+    function akGetDouble(M, slot, recv, sel) {
+      try {
+        if (!slot || !sel || !recv) return { ok: false };
+        var d = akDyn(M, 'dynCall_viii');
+        if (!d) return { ok: false };
+        var ptr = akMalloc(M, 16);
+        if (!ptr) return { ok: false };
+        try {
+          var h = heapViews();
+          if (!h) { akFree(M, ptr); return { ok: false }; }
+          var buf = h.module.HEAPU8 ? h.module.HEAPU8.buffer : (h.module.memory ? h.module.memory.buffer : null);
+          if (!buf) { akFree(M, ptr); return { ok: false }; }
+          var dv = new DataView(buf);
+          dv.setFloat64(ptr, NaN, true);
+          dv.setFloat64(ptr + 8, NaN, true);
+          Reflect.apply(d.fn, d.self, [slot, ptr, recv, sel]);
+          var v = dv.getFloat64(ptr, true);
+          if (!isFinite(v)) return { ok: false };
+          return { ok: true, value: v };
+        } finally { try { akFree(M, ptr); } catch (eF) {} }
       } catch (e) { return { ok: false }; }
     }
     // v2.58: ambil objek visualCue (receiver setter aim/power) dari gm:
@@ -3338,11 +3384,17 @@ var AKV2_VERSION = '2.59';
       if (g.unknown.length) log('GATE unknown (tidak bisa dibaca tanpa dynamicBindings AKWeb, BUKAN lolos): ' + g.unknown.join(' | '));
       return g;
     }
-    // v2.58: baca balik nilai aim/power yang baru ditulis setter.
-    // mPower (cue+8) harus == powerRatio; aimAngle (*(cue+4)+24) harus
-    // == plan.angle (toleransi 1e-9 — setter menulis double persis).
-    // Best-effort: kalau heap/cue tidak kebaca, lewati (unknown, bukan
-    // gagal) — gate g3 tetap jadi penjaga.
+    // v2.60 READBACK — pastikan nilai yang ditulis setter BENAR-BENAR
+    // sampai di game sebelum takeShot. LOLOS kalau ada SATU sumber yang
+    // cocok dengan plan; GAGAL hanya kalau SEMUA sumber yang terbaca
+    // TIDAK cocok. Sumber tidak terbaca = diabaikan (bukan gagal):
+    // v2.57 menembak tanpa readback sama sekali dan itu JALAN.
+    // Toleransi: power 0.02 (rasio), aim 1e-4 rad — cukup ketat untuk
+    // menangkap power salah total (bug buildPlan v2.58: 83% vs 30%),
+    // cukup longgar untuk noise float / kurva setter.
+    // Sumber power: getter method (akGetDouble, kebal offset) + heap
+    // mentah di KEDUA kandidat offset (+8 dan +12 — jangan tebak).
+    // Sumber aim: getter method + heap (*(cue+4)+24) dan (*(cue+8)+24).
     function readbackShot(M, cueObj, plan) {
       try {
         if (!cueObj) return { ok: true, skipped: true };
@@ -3351,12 +3403,36 @@ var AKV2_VERSION = '2.59';
         var buf = h.module.HEAPU8 ? h.module.HEAPU8.buffer : (h.module.memory ? h.module.memory.buffer : null);
         if (!buf) return { ok: true, skipped: true };
         var dv = new DataView(buf);
-        var pw = dv.getFloat64(cueObj + 8, true);
-        if (isFinite(pw) && Math.abs(pw - plan.powerRatio) > 1e-9) return { ok: false, why: 'mPower=' + pw + ' != powerRatio=' + plan.powerRatio };
-        var sub = dv.getUint32(cueObj + 4, true);
-        if (sub) {
-          var an = dv.getFloat64(sub + 24, true);
-          if (isFinite(an) && Math.abs(an - plan.angle) > 1e-9) return { ok: false, why: 'aimAngle=' + an + ' != plan.angle=' + plan.angle };
+        function rawF64(off) {
+          try { var v = dv.getFloat64(cueObj + off, true); return isFinite(v) ? v : null; } catch (e) { return null; }
+        }
+        // --- power ---
+        var pwSources = [];
+        var gPw = akGetDouble(M, AKV2_LIVE.powerSlot, cueObj, AKV2_LIVE.powerSel);
+        if (gPw.ok) pwSources.push(gPw.value);
+        var r8 = rawF64(8); if (r8 !== null) pwSources.push(r8);
+        var r12 = rawF64(12); if (r12 !== null) pwSources.push(r12);
+        if (pwSources.length) {
+          var pwOk = false;
+          for (var i = 0; i < pwSources.length; i++) if (Math.abs(pwSources[i] - plan.powerRatio) <= 0.02) { pwOk = true; break; }
+          if (!pwOk) return { ok: false, why: 'power tidak cocok: sumber=' + pwSources.map(function (v) { return v.toFixed(4); }).join('/') + ' != powerRatio=' + plan.powerRatio.toFixed(4) };
+        }
+        // --- aim ---
+        var anSources = [];
+        var gAn = akGetDouble(M, AKV2_LIVE.aimAngleSlot, cueObj, AKV2_LIVE.aimAngleSel);
+        if (gAn.ok) anSources.push(gAn.value);
+        try {
+          var sub4 = dv.getUint32(cueObj + 4, true);
+          if (sub4) { var a4 = dv.getFloat64(sub4 + 24, true); if (isFinite(a4)) anSources.push(a4); }
+        } catch (e) {}
+        try {
+          var sub8 = dv.getUint32(cueObj + 8, true);
+          if (sub8) { var a8 = dv.getFloat64(sub8 + 24, true); if (isFinite(a8)) anSources.push(a8); }
+        } catch (e) {}
+        if (anSources.length) {
+          var anOk = false;
+          for (var j = 0; j < anSources.length; j++) if (Math.abs(anSources[j] - plan.angle) <= 1e-4) { anOk = true; break; }
+          if (!anOk) return { ok: false, why: 'aim tidak cocok: sumber=' + anSources.map(function (v) { return v.toFixed(4); }).join('/') + ' != plan.angle=' + plan.angle.toFixed(4) };
         }
         return { ok: true };
       } catch (e) { return { ok: true, skipped: true }; }
@@ -3399,8 +3475,19 @@ var AKV2_VERSION = '2.59';
     }
     async function commitShot(plan) {
       // Urutan commit ala AKWeb: gate -> kill-animation/zero-power ->
-      // gate ulang -> restore-angle -> gate ulang -> setAim -> setPower ->
-      // gate ulang -> takeShot. Satu gagal = abandoned (log alasannya).
+      // gate ulang -> restore-angle -> gate ulang -> setAim -> setEnglish
+      // -> gate ulang (g3) -> setPower -> readback -> takeShot. Satu
+      // gagal = abandoned (log alasannya).
+      // v2.60 PERBAIKAN "cuma nge-power ga nusuk" (regresi v2.58):
+      // g3 DULU sesudah setPower — padahal setPower sendiri yang
+      // menyalakan powerMode/powerAnimating dan readback lama membaca
+      // heap di offset yang salah (cue+8, lihat readbackShot), jadi
+      // commit SELALU abandon sesudah setPower dan cue tertinggal
+      // ke-charge selamanya. Sekarang: (1) g3 pindah SEBELUM setPower
+      // (state pre-charge yang dicek, bukan akibat setPower sendiri);
+      // (2) readback pakai getter method + toleransi + skip kalau tidak
+      // terbaca; (3) SETIAP abandon sesudah power ke-charge WAJIB
+      // zero-power dulu (cue tidak pernah tertinggal ke-charge).
       if (!plan) plan = getPlan();
       if (!plan) { S.lastGateFail = ['no-plan']; S.lastGateReasons = ['no-plan: tidak ada plan']; log('COMMIT gagal: tidak ada plan'); stat('GATE GAGAL [no-plan] — tidak ada plan'); return false; }
       S.lastGateFail = []; S.lastGateReasons = [];
@@ -3421,6 +3508,17 @@ var AKV2_VERSION = '2.59';
       // sebelum takeShot (sesudah gate g3 lolos). S.linesFrozen tetap
       // di sini (hanya memengaruhi gambar overlay, bukan gate).
       S.linesFrozen = true;
+      // v2.60: flag + helper abandon — kalau power sudah ke-charge,
+      // kembalikan ke 0 dulu sebelum pulang, supaya cue tidak tertinggal
+      // ke-charge dan tick berikutnya mulai dari keadaan bersih.
+      var charged = false;
+      function abandon(code, msg) {
+        if (charged && cueObj) { try { akSetDouble(M, cueObj, AKV2_LIVE.setPowerSlot, AKV2_LIVE.setPowerSel, 0, 'zero-power-abandon'); } catch (e) {} charged = false; }
+        S.lastGateFail = [code]; S.lastGateReasons = [code + ': ' + msg];
+        log('COMMIT ABANDONED (' + code + '): ' + msg);
+        stat('TEMBAK dynCall ditahan: ' + msg);
+        return false;
+      }
       try {
         // Langkah 0 — killAnimation beneran (26483 di cue, best-effort).
         // v2.58 memakai zero-power sebagai pengganti; sekarang keduanya
@@ -3443,8 +3541,7 @@ var AKV2_VERSION = '2.59';
         // mapping/offset). Ghost-ball: angle = atan2(G.y-cue.y, G.x-cue.x),
         // dan shot.angle solver sudah = atan2 itu.
         if (!akSetDouble(M, cueObj, AKV2_LIVE.setAimSlot, AKV2_LIVE.setAimSel, plan.angle, 'setAimAngle')) {
-          S.lastGateFail = ['setter-failed']; S.lastGateReasons = ['setter-failed: setAimAngle gagal'];
-          log('COMMIT ABANDONED: setAimAngle gagal'); stat('TEMBAK dynCall gagal: setAimAngle (setter live tidak jalan)'); return false;
+          return abandon('setter-failed', 'setAimAngle gagal');
         }
         // Langkah 3b — setEnglish (spin) ala AKWeb: english [x,y] di unit
         // disk, SATU panggilan dynCall_viii dengan 2 f64. Urutan AKWeb:
@@ -3467,32 +3564,45 @@ var AKV2_VERSION = '2.59';
           var engObj = akGetEnglishObj(M, mgr);
           if (!engObj) {
             if (sp.x !== 0 || sp.y !== 0) {
-              S.lastGateFail = ['setter-failed']; S.lastGateReasons = ['setter-failed: englishObj tidak kebaca padahal spin=(' + sp.x + ',' + sp.y + ')'];
-              log('COMMIT ABANDONED: englishObj tidak kebaca (spin direncanakan, tidak bisa dijamin)'); stat('TEMBAK dynCall ditahan: englishObj tidak kebaca'); return false;
+              return abandon('setter-failed', 'englishObj tidak kebaca padahal spin=(' + sp.x + ',' + sp.y + ')');
             }
             log('COMMIT langkah setEnglish: englishObj tidak kebaca — spin (0,0), lanjut (tidak ada spin yang hilang)');
           } else if (!akSetEnglish(M, engObj, AKV2_LIVE.englishSlot, AKV2_LIVE.englishSel, sp.x, sp.y, 'setEnglish')) {
             S.englishKnown = false;
-            S.lastGateFail = ['setter-failed']; S.lastGateReasons = ['setter-failed: setEnglish gagal (englishKnown dimatikan)'];
-            log('COMMIT ABANDONED: setEnglish gagal'); stat('TEMBAK dynCall gagal: setEnglish'); return false;
+            return abandon('setter-failed', 'setEnglish gagal (englishKnown dimatikan)');
           }
         }
+        // v2.60: GATE AKHIR (g3) DI SINI — sebelum setPower, bukan
+        // sesudahnya. setPower sendiri menyalakan powerMode / animasi
+        // power, jadi gate sesudah setPower pasti gagal dan commit tidak
+        // pernah sampai takeShot (regresi v2.58). State yang dicek di
+        // sini adalah state pre-charge yang benar.
+        var g3 = readCommitState(plan);
+        if (!g3.ok) { S.lastGateFail = g3.failed.slice(); S.lastGateReasons = g3.reasons.slice(); log('COMMIT ABANDONED (gate akhir): ' + g3.reasons.join(' ; ')); stat('GATE GAGAL [' + g3.failed.join(',') + '] — tembak dynCall ditahan'); return false; }
         // Langkah 4 — setPower (powerRatio 0..1 dari simPower/cueMaxPower).
         if (!akSetDouble(M, cueObj, AKV2_LIVE.setPowerSlot, AKV2_LIVE.setPowerSel, plan.powerRatio, 'setPower')) {
-          S.lastGateFail = ['setter-failed']; S.lastGateReasons = ['setter-failed: setPower gagal'];
-          log('COMMIT ABANDONED: setPower gagal'); stat('TEMBAK dynCall gagal: setPower (setter live tidak jalan)'); return false;
+          return abandon('setter-failed', 'setPower gagal');
         }
-        // v2.58 READBACK ala AKWeb: pastikan nilai yang ditulis setter
+        charged = true;
+        // v2.60 READBACK ala AKWeb: pastikan nilai yang ditulis setter
         // BENAR-BENAR sampai di game sebelum takeShot. Kalau meleset,
         // JANGAN tembak dengan power/sudut yang salah — itu persis
-        // keluhan user ("power tidak sesuai garis prediksi").
+        // keluhan user ("power tidak sesuai garis prediksi"). Versi
+        // v2.58 membaca heap mentah di offset salah (cue+8) dan selalu
+        // gagal; v2.60 pakai getter method + toleransi (lihat
+        // readbackShot) dan tidak pernah gagal karena sumber tidak
+        // terbaca. Abandon di sini WAJIB zero-power dulu (lewat
+        // abandon()).
         var rb = readbackShot(M, cueObj, plan);
-        if (!rb.ok) { S.lastGateFail = ['setter-readback']; S.lastGateReasons = ['setter-readback: ' + rb.why]; log('COMMIT ABANDONED (readback setter): ' + rb.why); stat('TEMBAK dynCall ditahan: readback setter gagal'); return false; }
-        // v2.58 READBACK english ala AKWeb: mEnglish di (engObj+8/+16)
-        // harus == plan.spin. (engObj + sp var-hoisted dari langkah 3b;
-        // kalau setter tidak diketahui / engObj tidak kebaca, lewati —
-        // tidak ada spin yang perlu diverifikasi.)
-        if (typeof engObj !== 'undefined' && engObj && typeof sp !== 'undefined' && sp) {
+        if (!rb.ok) { return abandon('setter-readback', rb.why); }
+        // v2.60 READBACK english ala AKWeb: mEnglish di (engObj+8/+16)
+        // harus == plan.spin — TAPI hanya ditegakkan kalau spin memang
+        // diminta (sp != 0,0). Kalau spin (0,0) dan readback meleset,
+        // itu cuma sisa spin lama / setter tidak menulis; tembakan tetap
+        // jalan (v2.57 menembak tanpa readback english dan itu jalan).
+        // Abandon atas spin (0,0) adalah salah satu penyebab "cuma
+        // nge-power ga nusuk" — jangan ulangi.
+        if (typeof engObj !== 'undefined' && engObj && typeof sp !== 'undefined' && sp && (sp.x !== 0 || sp.y !== 0)) {
           try {
             var hRB = heapViews();
             if (hRB) {
@@ -3501,28 +3611,29 @@ var AKV2_VERSION = '2.59';
                 var dvRB = new DataView(bufRB);
                 var ex = dvRB.getFloat64(engObj + 8, true), ey = dvRB.getFloat64(engObj + 16, true);
                 if ((isFinite(ex) && Math.abs(ex - sp.x) > 1e-9) || (isFinite(ey) && Math.abs(ey - sp.y) > 1e-9)) {
-                  S.lastGateFail = ['setter-readback']; S.lastGateReasons = ['setter-readback: english=(' + ex + ',' + ey + ') != plan.spin=(' + sp.x + ',' + sp.y + ')'];
-                  log('COMMIT ABANDONED (readback english): ' + S.lastGateReasons[0]); stat('TEMBAK dynCall ditahan: readback english gagal'); return false;
+                  return abandon('setter-readback', 'english=(' + ex + ',' + ey + ') != plan.spin=(' + sp.x + ',' + sp.y + ')');
                 }
               }
             }
           } catch (eRBE) {}
         }
-        var g3 = readCommitState(plan);
-        if (!g3.ok) { S.lastGateFail = g3.failed.slice(); S.lastGateReasons = g3.reasons.slice(); log('COMMIT ABANDONED (gate akhir): ' + g3.reasons.join(' ; ')); stat('GATE GAGAL [' + g3.failed.join(',') + '] — tembak dynCall ditahan'); return false; }
         // Langkah 5 — takeShot via dynCall (BUKAN drag pointer canvas).
         // v2.58: S.shooting = true HANYA di sini, sesudah gate terakhir
         // (g3) lolos. Kalau di-set lebih awal, gate ulang g1/g2/g3 akan
         // gagal 'already-shooting' (lihat komentar di awal commitShot).
         S.shooting = true;
-        if (!akTakeShot(M, mgr)) { S.lastGateFail = ['takeshot-failed']; S.lastGateReasons = ['takeshot-failed: takeShot gagal']; log('COMMIT ABANDONED: takeShot gagal'); stat('TEMBAK dynCall gagal: takeShot (takeShot live tidak jalan)'); return false; }
+        if (!akTakeShot(M, mgr)) { return abandon('takeshot-failed', 'takeShot gagal'); }
+        charged = false;
         plan.used = true;
         S.autoPreShotNums = null;
         S.scanCache = null; // v2.58: posisi berubah habis tembak — cache scan harus baca ulang.
         log('COMMIT TERKIRIM plan=' + plan.planId + ' target=' + plan.target + ' angle=' + (plan.angle * 180 / Math.PI).toFixed(1) + ' powerRatio=' + plan.powerRatio.toFixed(2));
         clearPlan('terkirim');
         return true;
-      } catch (e) { log('COMMIT error: ' + e.message); return false; }
+      } catch (e) {
+        if (charged && cueObj) { try { akSetDouble(M, cueObj, AKV2_LIVE.setPowerSlot, AKV2_LIVE.setPowerSel, 0, 'zero-power-error'); } catch (eZ) {} }
+        log('COMMIT error: ' + e.message); return false;
+      }
       finally {
         setTimeout(function () { S.shooting = false; S.linesFrozen = false; }, 800);
       }
@@ -3666,6 +3777,10 @@ var AKV2_VERSION = '2.59';
           // v2.58 (§24): autoTick tiap tick saat autoplay ON — jangan
           // tunggu signature berubah (meja diam = snapshot identik).
           autoTick().catch(function () {});
+          // v2.60: garis LIVE juga saat autoplay ON — kalau user geser
+          // aim/power manual, preview ngikutin; kalau tidak, throttle
+          // signature bikin ini no-op (garis plan tetap yang digambar).
+          try { if (S.lastScan && S.lastScan.shot && S.lastGetterRes) livePreview(S.lastGetterRes, S.lastScan.shot); } catch (eLP2) {}
         } else if (changed && !S.linesFrozen) {
           refreshOverlay().catch(function () {});
         }
@@ -4220,8 +4335,12 @@ var AKV2_VERSION = '2.59';
       // v2.0: garis HANYA untuk bola yang TERSENTUH menurut simulasi fisika.
       // Bola yang tidak bergerak di sim = tidak kena = tidak digambar garis (biar tidak bingung).
       // v2.7: garis ala Arab — lebih TEBAL + glow biar jelas terlihat.
-      if (shot && shot.simRes && shot.simRes.balls) {
-        for (var _si = 0; _si < shot.simRes.balls.length; _si++) {
+      // v2.60: gambar dari shot.dispRes (preview LIVE) kalau ada, kalau
+      // tidak dari shot.simRes (sim plan). dispRes diisi livePreview
+      // tiap tick dari aim/power game saat ini.
+      var _simDraw = (shot && shot.dispRes && shot.dispRes.balls) ? shot.dispRes : (shot && shot.simRes ? shot.simRes : null);
+      if (_simDraw && _simDraw.balls) {
+        for (var _si = 0; _si < _simDraw.balls.length; _si++) {
           (function (sb) {
             if (!sb.positions || sb.positions.length < 2) return; // tidak tersentuh, skip
             var _isCue = sb.number === 0;
@@ -4243,7 +4362,7 @@ var AKV2_VERSION = '2.59';
             ctx.beginPath(); ctx.arc(_ls[0], _ls[1], 8, 0, 7);
             ctx.fillStyle = _col; ctx.fill();
             ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.stroke();
-          })(shot.simRes.balls[_si]);
+          })(_simDraw.balls[_si]);
         }
       }
       if (cue && shot && tgt) {
@@ -4277,6 +4396,66 @@ var AKV2_VERSION = '2.59';
         }
         // (blok sim lama digabung ke atas: garis semua bola yang tersentuh)
       }
+    }
+    // v2.60 GARIS LIVE ala AKWeb — re-sim tiap tick dari aim + power
+    // game SAAT INI, lalu gambar ulang trajektori + titik berhenti.
+    // Perilaku yang diminta user: "cue digerakkan -> line ngikut;
+    // nge-power -> line gerak, nunjukin bola berhenti di mana".
+    // - Aim live: getter aimAngle (kalau user/solver geser aim).
+    //   Kalau tidak terbaca -> sudut plan (shot.angle).
+    // - Power live: getter power (kalau user/solver lagi nge-power).
+    //   Kalau 0 (belum di-charge) -> power plan / power fisika, supaya
+    //   preview menunjukkan rencana, bukan garis kosong.
+    // - Hasil sim disimpan di shot.dispRes (DISPLAY ONLY — tidak
+    //   menyentuh shot.simPower / validated / keputusan tembak).
+    // - Throttle: re-sim hanya kalau aim/power/posisi cue berubah;
+    //   tidak jalan saat bola bergerak, menembak, atau garis beku.
+    function livePreview(res, shot) {
+      try {
+        if (!res || !res.balls || !res.balls.length) return false;
+        if (!shot || !isFinite(shot.angle) || !shot.ghost || !shot.pocket) return false;
+        if (S.linesFrozen || S.shooting) return false;
+        if (S.linePreview === false) return false;
+        var cue = null, maxSp = 0;
+        for (var i = 0; i < res.balls.length; i++) {
+          var b = res.balls[i];
+          var sp2 = Math.hypot(b.vx || 0, b.vy || 0);
+          if (sp2 > maxSp) maxSp = sp2;
+          if (b.num === 0) cue = b;
+        }
+        if (!cue || maxSp > 0.05) return false; // bola bergerak = bukan fase aim
+        var liveAngle = shot.angle, livePowerSim = (shot.simPower && shot.simPower > 0) ? shot.simPower : 0;
+        try {
+          var h = heapViews();
+          if (h) {
+            var M = h.module, mgr = akGetManagers(h);
+            var gm = (mgr && mgr.ok) ? mgr.gameManager : (res.gameManager || 0);
+            var cueObj = gm ? akGetVisualCue(M, gm) : 0;
+            if (cueObj) {
+              var gAn = akGetDouble(M, AKV2_LIVE.aimAngleSlot, cueObj, AKV2_LIVE.aimAngleSel);
+              if (gAn.ok && isFinite(gAn.value) && gAn.value >= -0.01 && gAn.value <= Math.PI * 2 + 0.01) liveAngle = gAn.value;
+              var gPw = akGetDouble(M, AKV2_LIVE.powerSlot, cueObj, AKV2_LIVE.powerSel);
+              if (gPw.ok && isFinite(gPw.value) && gPw.value > 0.01 && gPw.value <= 1.01) livePowerSim = Math.min(1, gPw.value) * (S.cueMaxPower || 888.85);
+            }
+          }
+        } catch (e) {}
+        if (!(livePowerSim > 0)) {
+          try { livePowerSim = physicsShotPower(cue, shot.ghost, shot.pocket); } catch (e2) {}
+        }
+        if (!(livePowerSim > 0)) return false;
+        var sig = liveAngle.toFixed(3) + '|' + Math.round(livePowerSim) + '|' + res.balls.length + '|' + cue.x.toFixed(1) + ',' + cue.y.toFixed(1);
+        if (sig === S.livePrevSig) return false;
+        S.livePrevSig = sig;
+        var sim = null;
+        try { sim = new PoolSim(); } catch (e3) { return false; }
+        var dbs = res.balls.map(function (bb) { return { x: bb.x, y: bb.y, number: (bb.num === null || bb.num === undefined ? -1 : bb.num), state: 1 }; });
+        var r2 = null;
+        try { r2 = sim.simulate({ balls: dbs, shotAngle: liveAngle, shotPower: livePowerSim, shotSpin: { x: 0, y: 0 } }); } catch (e4) { return false; }
+        if (!r2 || !r2.balls) return false;
+        shot.dispRes = r2;
+        drawShot(shot, res);
+        return true;
+      } catch (e) { return false; }
     }
     function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
     function evOpts(x, y) { return { bubbles: true, cancelable: true, clientX: x, clientY: y, screenX: x, screenY: y, button: 0, buttons: 1, pointerId: 7, pointerType: 'touch', isPrimary: true }; }
@@ -4834,6 +5013,7 @@ var AKV2_VERSION = '2.59';
       var shot = pickShot(autoRes.balls, autoRes.pockets, autoRes.radius, S.group, S.allowBank, autoRes.pocketWidth, true); // v2.41: noSim — garis display saja, sim tiap 3 detik bikin patah-patah
       S.lastScan = { res: autoRes, shot: shot || null };
       drawShot(shot, autoRes);
+      if (shot) { try { livePreview(autoRes, shot); } catch (eLP) {} } // v2.60: trajektori + titik berhenti LIVE dari aim/power game
       if (shot) log('REFRESH garis target=' + autoRes.balls[shot.targetIdx].num + ' (otomatis, bola stabil)');
     }
     async function deteksiTick() {

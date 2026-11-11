@@ -26,7 +26,7 @@ import org.mozilla.geckoview.GeckoView
  * - Membuka https://8ballpool.com/game (langsung ke halaman game,
  *   bukan halaman utama; orientasi landscape — lihat AndroidManifest).
  * - Menginstal HANYA ekstensi solver dari assets/solver-extension/
- *   (content script solver heap v2.59) — solver di-inject ke frame
+ *   (content script solver heap v2.60) — solver di-inject ke frame
  *   game via content script (all_frames, document_start), bukan via
  *   javascript: URL.
  * - TIDAK ADA ekstensi AKWeb di aplikasi ini (dihapus 2026-11-07
@@ -39,10 +39,10 @@ class MainActivity : Activity() {
 
     companion object {
         const val GAME_URL = "https://8ballpool.com/game"
-        // Ekstensi solver: content script solver heap v2.59, diinstal
+        // Ekstensi solver: content script solver heap v2.60, diinstal
         // built-in dari assets.
         const val SOLVER_EXTENSION_LOCATION = "resource://android/assets/solver-extension/"
-        const val SOLVER_VERSION = "v2.59"
+        const val SOLVER_VERSION = "v2.60"
     }
 
     private lateinit var statusSolver: TextView
@@ -98,7 +98,7 @@ class MainActivity : Activity() {
             )
         }
 
-        debugPanel.addView(label("8BP Solver Browser — GeckoView + solver v2.59"))
+        debugPanel.addView(label("8BP Solver Browser — GeckoView + solver v2.60"))
         debugPanel.addView(label("Panel debug tersembunyi — tap ikon 🔧 di pojok kiri bawah untuk tampil/sembunyi."))
 
         statusSolver = label("SOLVER: belum dipasang")
@@ -227,7 +227,7 @@ class MainActivity : Activity() {
     /**
      * Pasang ekstensi solver (SATU-SATUNYA ekstensi di aplikasi ini).
      *
-     * Isi: satu content script (solver.js, = solver heap v2.59 tanpa
+     * Isi: satu content script (solver.js, = solver heap v2.60 tanpa
      * blok metadata userscript, dengan gating ownModule() 2026-11-07
      * supaya panel hanya dibangun di frame game yang punya Module
      * sendiri) dengan matches = origin game, all_frames = true,
