@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         8BP AKWeb Solver Gabungan v2.60 (Getter + dynCall)
+// @name         8BP AKWeb Solver Gabungan v2.61 (Getter + dynCall)
 // @namespace    nbp
-// @version      gabungan-v2.60
-// @description  v2.60 ala AKWeb: NUSUK BENERAN (commit tidak lagi abandon sesudah setPower — gate g3 pindah sebelum setPower, readback pakai getter method + toleransi, cue tidak pernah tertinggal ke-charge) + garis LIVE ala AKWeb (re-sim tiap tick dari aim/power game, prediksi titik berhenti ngikutin power); bola dibaca via getter dynCall + fallback scan heap + pointer tracking (tanda nomor+92/radius+48, terbukti v2.46; alamat dilacak sekali, baca O(16) tanpa sweep ulang), tembak via dynCall setAim/setPower/takeShot + fallback DRAG pointer kalau gate manager/table gagal (angka Steel tidak jalan live), commit gate + plan satu siklus, loop requestAnimationFrame + fallback timer. Binding live guest (wasm sha 6c7a33d4..): manager HEAP32[27555]/[37069], getTable 7992, getBall 24373, setter di objek cue — tervalidasi di rig meja menu; posisi + tembakan belum terbukti di match live (lobby WebSocket diblokir di rig).
+// @version      gabungan-v2.61
+// @description  v2.61 ala AKWeb: POWER NAIK (sweep coba 1.25x/1.15x power fisika dulu — power fisika = minimum, bola sampai saku kecepatan ~0, di game nyata sering kepelan; sim validasi tetap penjaga) + tuner belajar dari titik berhenti putih + probe max live tidak lagi menimpa cueMaxPower + AIM MAGNET (autoplay ON garis kunci ke pick, OFF garis bebas ngikutin aim/power user realtime); bola dibaca via getter dynCall + fallback scan heap + pointer tracking (tanda nomor+92/radius+48, terbukti v2.46; alamat dilacak sekali, baca O(16) tanpa sweep ulang), tembak via dynCall setAim/setPower/takeShot + fallback DRAG pointer kalau gate manager/table gagal (angka Steel tidak jalan live), commit gate + plan satu siklus, loop requestAnimationFrame + fallback timer. Binding live guest (wasm sha 6c7a33d4..): manager HEAP32[27555]/[37069], getTable 7992, getBall 24373, setter di objek cue — tervalidasi di rig meja menu; posisi + tembakan belum terbukti di match live (lobby WebSocket diblokir di rig).
 // @match        https://prod-web-pool.miniclip.com/*
 // @match        https://*.pool.miniclippt.com/*
 // @match        https://*.miniclip.com/*
@@ -12,7 +12,7 @@
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
-var AKV2_VERSION = '2.60';
+var AKV2_VERSION = '2.61';
 (function () {
   'use strict';
   function pageCode() {
@@ -1519,6 +1519,48 @@ var AKV2_VERSION = '2.60';
     // nilai benar, bukan osilasi.
     function tuneCuePower(preRes, postRes, shot) {
       if (!S.cueAuto || !shot || !shot.simPower || !preRes || !preRes.balls || !postRes || !postRes.balls) return;
+      // v2.61: BELAJAR DARI TITIK BERHENTI (line mendarat dimana).
+      // Bandingkan posisi akhir putih HASIL SIM (shot.simRes, power yang
+      // dieksekusi) dengan posisi akhir putih NYATA sesudah tembakan.
+      // Kalau putih nyata berhenti jauh lebih pendek dari prediksi sim =
+      // tenaga kurang — ini ketahuan WALAU target tidak bergerak (kontak
+      // lemah / putih berhenti sebelum sampai target tidak ketahuan oleh
+      // logika progress target di bawah, yang butuh progress > 0.4).
+      // Kalau jauh lebih jauh = terlalu kuat. Satu penyesuaian per
+      // tembakan (return sesudah menyesuaikan).
+      try {
+        var cuePre = null, cuePost = null, cueFinPred = null;
+        for (var _ci = 0; _ci < preRes.balls.length; _ci++) if (preRes.balls[_ci].num === 0) cuePre = preRes.balls[_ci];
+        for (var _cj = 0; _cj < postRes.balls.length; _cj++) if (postRes.balls[_cj].num === 0) cuePost = postRes.balls[_cj];
+        if (shot.simRes && shot.simRes.balls) {
+          for (var _ck = 0; _ck < shot.simRes.balls.length; _ck++) {
+            var _sb = shot.simRes.balls[_ck];
+            if (_sb.number === 0 && _sb.positions && _sb.positions.length) {
+              var _lp = _sb.positions[_sb.positions.length - 1];
+              cueFinPred = { x: _lp.x, y: _lp.y };
+              break;
+            }
+          }
+        }
+        if (cuePre && cuePost && cueFinPred) {
+          var predTravel = Math.hypot(cueFinPred.x - cuePre.x, cueFinPred.y - cuePre.y);
+          var actTravel = Math.hypot(cuePost.x - cuePre.x, cuePost.y - cuePre.y);
+          if (predTravel > 10) {
+            if (actTravel < predTravel * 0.7) {
+              S.cueMaxPower = Math.max(500, S.cueMaxPower * 0.97);
+              saveCue();
+              log('CUE AUTO: max=' + S.cueMaxPower.toFixed(1) + ' (putih berhenti ' + actTravel.toFixed(0) + ' vs prediksi ' + predTravel.toFixed(0) + ' unit — kurang tenaga, titik berhenti tidak sampai garis)');
+              return;
+            }
+            if (actTravel > predTravel * 1.3) {
+              S.cueMaxPower = Math.min(1200, S.cueMaxPower * 1.03);
+              saveCue();
+              log('CUE AUTO: max=' + S.cueMaxPower.toFixed(1) + ' (putih melaju ' + actTravel.toFixed(0) + ' vs prediksi ' + predTravel.toFixed(0) + ' unit — terlalu kuat)');
+              return;
+            }
+          }
+        }
+      } catch (eCS) {}
       var preTgt = preRes.balls[shot.targetIdx];
       if (!preTgt) return;
       var postTgt = null;
@@ -1866,11 +1908,24 @@ var AKV2_VERSION = '2.60';
         // PALING LEMBUT yang lolos = tepi jendela, rapuh terhadap selisih
         // skala sim-vs-game (cueMaxPower 888.85 belum terkalibrasi presisi).
         // Kalau power fisika tidak lolos / tidak robust, sweep naik seperti dulu.
+        // v2.61 MARGIN DAYA: power fisika = MINIMUM (bola target sampai
+        // pocket dengan kecepatan ~0) — di game nyata itu sering tidak
+        // cukup (gesekan/saku butuh sisa kecepatan) -> "kepelan, kurang
+        // besar powernya" (laporan live 2026-11-11). Coba dulu 1.25x dan
+        // 1.15x power fisika; sim validasi + robustness yang menjaga
+        // (scratch / tabrakan / 8 prematur tetap ditolak, jadi margin
+        // tidak bisa bikin tembakan berbahaya lolos). Garis display ikut
+        // power eksekusi (won.res), jadi line dan power tetap sama.
         var powers = [];
         if (cue) {
           try {
             var pPhys = physicsShotPower(cue, c.ghost, c.pocket);
-            if (isFinite(pPhys)) powers.push(Math.round(pPhys));
+            if (isFinite(pPhys)) {
+              [1.25, 1.15, 1.0].forEach(function (m) {
+                var pm = Math.round(pPhys * m);
+                if (pm >= 150 && pm <= mx) powers.push(pm);
+              });
+            }
           } catch (ePP2) {}
         }
         for (var pp = 150; pp <= mx; pp += 50) powers.push(pp);
@@ -2079,7 +2134,7 @@ var AKV2_VERSION = '2.60';
       p.id = 'akv2';
       p.style.cssText = 'position:fixed;top:68px;right:8px;z-index:2147483000;touch-action:manipulation;-webkit-tap-highlight-color:transparent;width:300px;max-height:92vh;overflow-y:auto;background:#FFF6E5;color:#111;font:bold 13px Arial,sans-serif;padding:10px;border:3px solid #111;border-radius:12px;box-shadow:4px 4px 0 #111;box-sizing:border-box';
       p.innerHTML =
-        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.60</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">getter dynCall + scan heap fallback + pointer tracking + tembak dynCall + drag fallback ala AKWeb. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
+        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.61</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">getter dynCall + scan heap fallback + pointer tracking + tembak dynCall + drag fallback ala AKWeb. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
         '<button id="akv2LinePreview" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#E1BEE7;box-shadow:2px 2px 0 #111;margin-top:8px">🎯 LINE PREVIEW: ON</button>' +
         '<button id="akv2AutoplayBtn" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#59D977;box-shadow:2px 2px 0 #111;margin-top:6px">▶️ AUTO PLAY: OFF</button>' +
         '<button id="akv2MatchBaru" style="width:100%;min-height:46px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF9800;color:#fff;box-shadow:2px 2px 0 #111;margin-top:6px">🔄 MATCH BARU</button>' +
@@ -3148,7 +3203,7 @@ var AKV2_VERSION = '2.60';
     function buildPlan(autoRes, shot) {
       // Plan terikat SATU siklus: satu tembakan per plan; tablePointer /
       // shotId (contextHash posisi bola) berubah -> plan batal.
-      var planId = 'p260-' + (++S.planCounter) + '-' + Date.now().toString(36);
+      var planId = 'p261-' + (++S.planCounter) + '-' + Date.now().toString(36);
       var cue = null, tgt = null;
       for (var i = 0; i < autoRes.balls.length; i++) if (autoRes.balls[i].num === 0) cue = autoRes.balls[i];
       if (shot && shot.targetIdx >= 0) tgt = autoRes.balls[shot.targetIdx];
@@ -3169,7 +3224,7 @@ var AKV2_VERSION = '2.60';
         nominatedPocket: shot && shot.pocket ? { x: shot.pocket.x, y: shot.pocket.y } : null,
         cuePtr: cue ? cue.ptr : 0, module: autoRes.module, buffer: autoRes.buffer, used: false, createdAt: Date.now() };
       S.currentPlan = plan;
-      try { sessionStorage.setItem('akv2plan260', JSON.stringify({ planId: plan.planId, tablePointer: plan.tablePointer, shotId: plan.shotId, target: plan.target, angle: plan.angle, powerRatio: plan.powerRatio })); } catch (e) {}
+      try { sessionStorage.setItem('akv2plan261', JSON.stringify({ planId: plan.planId, tablePointer: plan.tablePointer, shotId: plan.shotId, target: plan.target, angle: plan.angle, powerRatio: plan.powerRatio })); } catch (e) {}
       log('PLAN ' + plan.planId + ' target=' + plan.target + ' angle=' + (plan.angle * 180 / Math.PI).toFixed(1) + ' powerRatio=' + plan.powerRatio.toFixed(2) + ' spin=(' + spin.x.toFixed(2) + ',' + spin.y.toFixed(2) + ')' + ' shotId=' + plan.shotId);
       return plan;
     }
@@ -3177,7 +3232,7 @@ var AKV2_VERSION = '2.60';
     function clearPlan(why) {
       if (S.currentPlan) log('PLAN batal: ' + (why || ''));
       S.currentPlan = null;
-      try { sessionStorage.removeItem('akv2plan260'); } catch (e) {}
+      try { sessionStorage.removeItem('akv2plan261'); } catch (e) {}
     }
     // v2.58: baca SATU field gate AKWeb via dynCall_iii [func, recv, sel].
     // {ok:true, value} kalau panggilan berhasil + angka; {ok:false} kalau
@@ -4401,11 +4456,14 @@ var AKV2_VERSION = '2.60';
     // game SAAT INI, lalu gambar ulang trajektori + titik berhenti.
     // Perilaku yang diminta user: "cue digerakkan -> line ngikut;
     // nge-power -> line gerak, nunjukin bola berhenti di mana".
-    // - Aim live: getter aimAngle (kalau user/solver geser aim).
-    //   Kalau tidak terbaca -> sudut plan (shot.angle).
-    // - Power live: getter power (kalau user/solver lagi nge-power).
-    //   Kalau 0 (belum di-charge) -> power plan / power fisika, supaya
-    //   preview menunjukkan rencana, bukan garis kosong.
+    // v2.61 AIM MAGNET vs BEBAS:
+    // - Autoplay ON = MAGNET: garis KUNCI ke tembakan pilihan solver
+    //   (shot.angle / shot.simPower) — aim live user DIABAIKAN, jadi
+    //   garis tidak goyang mengikuti geseran aim manual; garis
+    //   "ngemagnet" ke bola target + saku pilihan solver.
+    // - Autoplay OFF = BEBAS: garis ngikutin aim + power user REALTIME
+    //   (getter aimAngle/power) — tidak ada magnet ke pick solver.
+    //   Dipakai refreshOverlay (manual) lewat manualShotFromAim.
     // - Hasil sim disimpan di shot.dispRes (DISPLAY ONLY — tidak
     //   menyentuh shot.simPower / validated / keputusan tembak).
     // - Throttle: re-sim hanya kalau aim/power/posisi cue berubah;
@@ -4424,21 +4482,28 @@ var AKV2_VERSION = '2.60';
           if (b.num === 0) cue = b;
         }
         if (!cue || maxSp > 0.05) return false; // bola bergerak = bukan fase aim
+        var magnet = !!S.autoBeruntun; // v2.61: ON = kunci ke pick, OFF = ikut aim user
         var liveAngle = shot.angle, livePowerSim = (shot.simPower && shot.simPower > 0) ? shot.simPower : 0;
-        try {
-          var h = heapViews();
-          if (h) {
-            var M = h.module, mgr = akGetManagers(h);
-            var gm = (mgr && mgr.ok) ? mgr.gameManager : (res.gameManager || 0);
-            var cueObj = gm ? akGetVisualCue(M, gm) : 0;
-            if (cueObj) {
-              var gAn = akGetDouble(M, AKV2_LIVE.aimAngleSlot, cueObj, AKV2_LIVE.aimAngleSel);
-              if (gAn.ok && isFinite(gAn.value) && gAn.value >= -0.01 && gAn.value <= Math.PI * 2 + 0.01) liveAngle = gAn.value;
-              var gPw = akGetDouble(M, AKV2_LIVE.powerSlot, cueObj, AKV2_LIVE.powerSel);
-              if (gPw.ok && isFinite(gPw.value) && gPw.value > 0.01 && gPw.value <= 1.01) livePowerSim = Math.min(1, gPw.value) * (S.cueMaxPower || 888.85);
+        if (!magnet) {
+          // BEBAS: aim live dari getter (user geser aim manual / solver setAim);
+          // fallback sudut plan. Power live dari getter; kalau 0 (belum
+          // di-charge) pakai power plan — preview menunjukkan rencana,
+          // bukan garis kosong.
+          try {
+            var h = heapViews();
+            if (h) {
+              var M = h.module, mgr = akGetManagers(h);
+              var gm = (mgr && mgr.ok) ? mgr.gameManager : (res.gameManager || 0);
+              var cueObj = gm ? akGetVisualCue(M, gm) : 0;
+              if (cueObj) {
+                var gAn = akGetDouble(M, AKV2_LIVE.aimAngleSlot, cueObj, AKV2_LIVE.aimAngleSel);
+                if (gAn.ok && isFinite(gAn.value) && gAn.value >= -0.01 && gAn.value <= Math.PI * 2 + 0.01) liveAngle = gAn.value;
+                var gPw = akGetDouble(M, AKV2_LIVE.powerSlot, cueObj, AKV2_LIVE.powerSel);
+                if (gPw.ok && isFinite(gPw.value) && gPw.value > 0.01 && gPw.value <= 1.01) livePowerSim = Math.min(1, gPw.value) * (S.cueMaxPower || 888.85);
+              }
             }
-          }
-        } catch (e) {}
+          } catch (e) {}
+        }
         if (!(livePowerSim > 0)) {
           try { livePowerSim = physicsShotPower(cue, shot.ghost, shot.pocket); } catch (e2) {}
         }
@@ -4456,6 +4521,89 @@ var AKV2_VERSION = '2.60';
         drawShot(shot, res);
         return true;
       } catch (e) { return false; }
+    }
+    // v2.61 TEMBAKAN MANUAL dari aim user (autoplay OFF = BEBAS).
+    // Baca aimAngle game saat ini, raycast dari putih sepanjang sudut
+    // itu ke bola pertama yang kena (jarak tegak < 2R), lalu bangun
+    // objek shot minimal untuk digambar + di-preview livePreview:
+    // ghost = titik kontak, target = bola pertama kena, pocket = saku
+    // paling searah dengan arah bola target sesudah kontak. Kalau tidak
+    // ada bola yang kena, ghost = titik bantalan di sepanjang ray dan
+    // targetIdx = -1 (sim tetap menunjukkan putih menggelinding +
+    // berhenti di mana). Return null kalau aim game tidak terbaca
+    // (pemanggil fallback ke garis pick solver).
+    function manualShotFromAim(res) {
+      try {
+        if (!res || !res.balls || !res.balls.length || !res.pockets || !res.pockets.length) return null;
+        var cue = null;
+        for (var i = 0; i < res.balls.length; i++) if (res.balls[i].num === 0) { cue = res.balls[i]; break; }
+        if (!cue) return null;
+        var ang = null;
+        try {
+          var h = heapViews();
+          if (h) {
+            var M = h.module, mgr = akGetManagers(h);
+            var gm = (mgr && mgr.ok) ? mgr.gameManager : (res.gameManager || 0);
+            var cueObj = gm ? akGetVisualCue(M, gm) : 0;
+            if (cueObj) {
+              var gAn = akGetDouble(M, AKV2_LIVE.aimAngleSlot, cueObj, AKV2_LIVE.aimAngleSel);
+              if (gAn.ok && isFinite(gAn.value) && gAn.value >= -0.01 && gAn.value <= Math.PI * 2 + 0.01) ang = gAn.value;
+            }
+          }
+        } catch (e) {}
+        if (ang === null || !isFinite(ang)) return null;
+        var R = res.radius || 3.800475;
+        var dx = Math.cos(ang), dy = Math.sin(ang);
+        var bestT = Infinity, bestIdx = -1;
+        for (var j = 0; j < res.balls.length; j++) {
+          if (res.balls[j].num === 0) continue;
+          var rx = res.balls[j].x - cue.x, ry = res.balls[j].y - cue.y;
+          var t = rx * dx + ry * dy;
+          if (t <= 0) continue;
+          var perp2 = rx * rx + ry * ry - t * t;
+          if (perp2 < 0) perp2 = 0;
+          if (Math.sqrt(perp2) >= 2 * R) continue;
+          if (t < bestT) { bestT = t; bestIdx = j; }
+        }
+        var ghost, pocket;
+        if (bestIdx >= 0) {
+          var tb = res.balls[bestIdx];
+          ghost = [tb.x - dx * 2 * R, tb.y - dy * 2 * R];
+          // Saku paling searah dengan arah bola target sesudah kontak.
+          var ox = tb.x - ghost[0], oy = tb.y - ghost[1];
+          var ol = Math.hypot(ox, oy) || 1; ox /= ol; oy /= ol;
+          var bestPk = null, bestDot = -2;
+          for (var k = 0; k < res.pockets.length; k++) {
+            var px = res.pockets[k].x - tb.x, py = res.pockets[k].y - tb.y;
+            var pl = Math.hypot(px, py) || 1;
+            var dot = (px / pl) * ox + (py / pl) * oy;
+            if (dot > bestDot) { bestDot = dot; bestPk = res.pockets[k]; }
+          }
+          pocket = bestPk || res.pockets[0];
+        } else {
+          // Tidak ada bola kena: ghost = titik bantalan di sepanjang ray.
+          var cr = null;
+          try { cr = getCushionRect(); } catch (eC) {}
+          var tC = Infinity;
+          if (cr) {
+            if (dx > 1e-6) tC = Math.min(tC, (cr.xmax - cue.x) / dx);
+            if (dx < -1e-6) tC = Math.min(tC, (cr.xmin - cue.x) / dx);
+            if (dy > 1e-6) tC = Math.min(tC, (cr.ymax - cue.y) / dy);
+            if (dy < -1e-6) tC = Math.min(tC, (cr.ymin - cue.y) / dy);
+          }
+          if (!isFinite(tC) || tC <= 0) tC = 100;
+          ghost = [cue.x + dx * tC, cue.y + dy * tC];
+          var bestPk2 = null, bestD2 = Infinity;
+          for (var k2 = 0; k2 < res.pockets.length; k2++) {
+            var d2 = Math.hypot(res.pockets[k2].x - ghost[0], res.pockets[k2].y - ghost[1]);
+            if (d2 < bestD2) { bestD2 = d2; bestPk2 = res.pockets[k2]; }
+          }
+          pocket = bestPk2 || res.pockets[0];
+        }
+        return { angle: ang, ghost: ghost, pocket: pocket, targetIdx: bestIdx,
+          power: 0, simPower: 0, spin: { x: 0, y: 0 }, simRes: null,
+          validated: false, isManual: true };
+      } catch (e) { return null; }
     }
     function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
     function evOpts(x, y) { return { bubbles: true, cancelable: true, clientX: x, clientY: y, screenX: x, screenY: y, button: 0, buttons: 1, pointerId: 7, pointerType: 'touch', isPrimary: true }; }
@@ -4651,6 +4799,15 @@ var AKV2_VERSION = '2.60';
     // (cue+176) adalah offset ivar LANGSUNG (tanpa geser +4 — geser itu
     // khusus struct bola; setter setPower menyimpan rasio di (cue+8),
     // terverifikasi via oracle di rig probe16.)
+    // v2.61: probe ini DISPLAY-ONLY — TIDAK LAGI menimpa S.cueMaxPower.
+    // Alasan: offset heap mentah (cue+176) adalah kelas yang SAMA dengan
+    // yang merusak readback v2.58 (mPower ternyata di (cue+12), bukan
+    // (cue+8)); kalau nilai live-nya salah (mis. 1100), dia mendorong
+    // max NAIK -> semua rasio mengecil -> tembakan sistematis KEPELAN,
+    // dan dia MELAWAN tuner (tuner menurunkan max, probe menaikkan lagi
+    // tiap detik). Satu-satunya penulis cueMaxPower sekarang adalah
+    // tuneCuePower (belajar dari hasil tembakan nyata). Nilai live tetap
+    // ditampilkan di DIAG (baris CUE) untuk diagnosis.
     function probeCueMaxPower(M, cueObj) {
       try {
         if (!cueObj || !M) return;
@@ -4666,12 +4823,7 @@ var AKV2_VERSION = '2.60';
         if (!isFinite(live) || live <= 0) return;
         var changed = (S.cueMaxLive !== live);
         S.cueMaxLive = live;
-        if (live >= 500 && live <= 1200) {
-          if (S.cueAuto && Math.abs(live - S.cueMaxPower) > 1) {
-            S.cueMaxPower = live; saveCue();
-            log('CUE MAX LIVE: game bilang ' + live.toFixed(1) + ' (dipakai sebagai cueMaxPower, ganti default 888.85)');
-          }
-        } else if (changed) {
+        if ((live < 500 || live > 1200) && changed) {
           log('CUE MAX LIVE: game bilang ' + live.toFixed(1) + ' — di luar rentang kecepatan (500..1200), diabaikan (pakai ' + S.cueMaxPower + ')');
         }
       } catch (e) {}
@@ -5010,6 +5162,21 @@ var AKV2_VERSION = '2.60';
       }
       S.refreshLastBalls = autoRes.balls;
       if (!stable) return;
+      // v2.61: autoplay OFF = BEBAS (bukan magnet) — garis dari AIM USER
+      // realtime (manualShotFromAim + livePreview), bukan dari pick
+      // solver. Kalau aim game tidak terbaca, fallback ke garis pick
+      // solver lama supaya overlay tidak kosong.
+      var mShot = null;
+      try { mShot = manualShotFromAim(autoRes); } catch (eM) { mShot = null; }
+      if (mShot) {
+        S.lastScan = { res: autoRes, shot: mShot };
+        var drew = false;
+        try { drew = livePreview(autoRes, mShot); } catch (eLPM) {}
+        if (!drew) drawShot(mShot, autoRes);
+        var _mn = (mShot.targetIdx >= 0 && autoRes.balls[mShot.targetIdx]) ? autoRes.balls[mShot.targetIdx].num : '-';
+        log('REFRESH garis manual target=' + _mn + ' (aim user realtime, tanpa magnet)');
+        return;
+      }
       var shot = pickShot(autoRes.balls, autoRes.pockets, autoRes.radius, S.group, S.allowBank, autoRes.pocketWidth, true); // v2.41: noSim — garis display saja, sim tiap 3 detik bikin patah-patah
       S.lastScan = { res: autoRes, shot: shot || null };
       drawShot(shot, autoRes);
