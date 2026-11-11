@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         8BP AKWeb Solver Gabungan v2.62 (Getter + dynCall)
+// @name         8BP AKWeb Solver Gabungan v2.63 (Getter + dynCall)
 // @namespace    nbp
-// @version      gabungan-v2.62
-// @description  v2.62 ala AKWeb: SKALA POWER TERUKUR (kalibrasi live Steel 2026-11-11: kecepatan game V ≈ 440·rasio − 70, cueMaxPower sebenarnya ~306 BUKAN 888.85 — sim melebih-lebihkan kecepatan 3-4x, itu sebabnya tembakan kepelan; gesekan sim ternyata BENAR: rolling 10.87 vs 10.878, sliding ~189 vs 196); margin dikurangi jadi 1.1x (skala yang benar sudah cukup); tuner clamp [200,500] + migrasi nilai lama; bola dibaca via getter dynCall + fallback scan heap + pointer tracking (tanda nomor+92/radius+48, terbukti v2.46; alamat dilacak sekali, baca O(16) tanpa sweep ulang), tembak via dynCall setAim/setPower/takeShot + fallback DRAG pointer kalau gate manager/table gagal (angka Steel tidak jalan live), commit gate + plan satu siklus, loop requestAnimationFrame + fallback timer. Binding live guest (wasm sha 6c7a33d4..): manager HEAP32[27555]/[37069], getTable 7992, getBall 24373, setter di objek cue — tervalidasi di rig meja menu; posisi + tembakan belum terbukti di match live (lobby WebSocket diblokir di rig).
+// @version      gabungan-v2.63
+// @description  v2.63 ala AKWeb: GARIS MANUAL REALTIME — pas autoplay OFF, garis ngikutin aim + power user TIAP TICK (bukan cuma kalau bola berubah): user geser aim / nge-charge power -> garis + titik berhenti gerak tiap frame kayak cheto (livePreview throttle signature + drawShot fallback cuma kalau tembakan manualnya berubah, jadi diam tidak bikin redraw sia-sia); bola dibaca via getter dynCall + fallback scan heap + pointer tracking (tanda nomor+92/radius+48, terbukti v2.46; alamat dilacak sekali, baca O(16) tanpa sweep ulang), tembak via dynCall setAim/setPower/takeShot + fallback DRAG pointer kalau gate manager/table gagal (angka Steel tidak jalan live), commit gate + plan satu siklus, loop requestAnimationFrame + fallback timer. Binding live guest (wasm sha 6c7a33d4..): manager HEAP32[27555]/[37069], getTable 7992, getBall 24373, setter di objek cue — tervalidasi di rig meja menu; posisi + tembakan belum terbukti di match live (lobby WebSocket diblokir di rig).
 // @match        https://prod-web-pool.miniclip.com/*
 // @match        https://*.pool.miniclippt.com/*
 // @match        https://*.miniclip.com/*
@@ -12,7 +12,7 @@
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
-var AKV2_VERSION = '2.62';
+var AKV2_VERSION = '2.63';
 (function () {
   'use strict';
   function pageCode() {
@@ -2136,7 +2136,7 @@ var AKV2_VERSION = '2.62';
       p.id = 'akv2';
       p.style.cssText = 'position:fixed;top:68px;right:8px;z-index:2147483000;touch-action:manipulation;-webkit-tap-highlight-color:transparent;width:300px;max-height:92vh;overflow-y:auto;background:#FFF6E5;color:#111;font:bold 13px Arial,sans-serif;padding:10px;border:3px solid #111;border-radius:12px;box-shadow:4px 4px 0 #111;box-sizing:border-box';
       p.innerHTML =
-        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.62</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">getter dynCall + scan heap fallback + pointer tracking + tembak dynCall + drag fallback ala AKWeb. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
+        '<div id="akv2Head" style="text-align:center;font-family:Arial Black,Arial,sans-serif;font-size:15px">🎱 SOLVER HEAP SERIUS <span style="background:#FF0;padding:2px 6px;border-radius:6px;font-size:12px">v2.63</span><button id="akv2ResetPos" title="Reset posisi panel" style="min-width:36px;min-height:36px;font-size:16px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#4ECDC4;color:#fff;margin-right:4px">⌂</button><button id="akv2Close" style="float:right;min-width:36px;min-height:36px;font-size:18px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF6B6B;color:#fff">✕</button><br><span style="font-size:11px;font-family:Arial,sans-serif">getter dynCall + scan heap fallback + pointer tracking + tembak dynCall + drag fallback ala AKWeb. Tutup dengan ✕, buka lagi dengan ikon 🎱.</span></div>' +
         '<button id="akv2LinePreview" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#E1BEE7;box-shadow:2px 2px 0 #111;margin-top:8px">🎯 LINE PREVIEW: ON</button>' +
         '<button id="akv2AutoplayBtn" style="width:100%;min-height:52px;font-weight:bold;font-size:16px;border:3px solid #111;border-radius:10px;background:#59D977;box-shadow:2px 2px 0 #111;margin-top:6px">▶️ AUTO PLAY: OFF</button>' +
         '<button id="akv2MatchBaru" style="width:100%;min-height:46px;font-weight:bold;border:3px solid #111;border-radius:10px;background:#FF9800;color:#fff;box-shadow:2px 2px 0 #111;margin-top:6px">🔄 MATCH BARU</button>' +
@@ -3214,7 +3214,7 @@ var AKV2_VERSION = '2.62';
     function buildPlan(autoRes, shot) {
       // Plan terikat SATU siklus: satu tembakan per plan; tablePointer /
       // shotId (contextHash posisi bola) berubah -> plan batal.
-      var planId = 'p262-' + (++S.planCounter) + '-' + Date.now().toString(36);
+      var planId = 'p263-' + (++S.planCounter) + '-' + Date.now().toString(36);
       var cue = null, tgt = null;
       for (var i = 0; i < autoRes.balls.length; i++) if (autoRes.balls[i].num === 0) cue = autoRes.balls[i];
       if (shot && shot.targetIdx >= 0) tgt = autoRes.balls[shot.targetIdx];
@@ -3235,7 +3235,7 @@ var AKV2_VERSION = '2.62';
         nominatedPocket: shot && shot.pocket ? { x: shot.pocket.x, y: shot.pocket.y } : null,
         cuePtr: cue ? cue.ptr : 0, module: autoRes.module, buffer: autoRes.buffer, used: false, createdAt: Date.now() };
       S.currentPlan = plan;
-      try { sessionStorage.setItem('akv2plan262', JSON.stringify({ planId: plan.planId, tablePointer: plan.tablePointer, shotId: plan.shotId, target: plan.target, angle: plan.angle, powerRatio: plan.powerRatio })); } catch (e) {}
+      try { sessionStorage.setItem('akv2plan263', JSON.stringify({ planId: plan.planId, tablePointer: plan.tablePointer, shotId: plan.shotId, target: plan.target, angle: plan.angle, powerRatio: plan.powerRatio })); } catch (e) {}
       log('PLAN ' + plan.planId + ' target=' + plan.target + ' angle=' + (plan.angle * 180 / Math.PI).toFixed(1) + ' powerRatio=' + plan.powerRatio.toFixed(2) + ' spin=(' + spin.x.toFixed(2) + ',' + spin.y.toFixed(2) + ')' + ' shotId=' + plan.shotId);
       return plan;
     }
@@ -3243,7 +3243,7 @@ var AKV2_VERSION = '2.62';
     function clearPlan(why) {
       if (S.currentPlan) log('PLAN batal: ' + (why || ''));
       S.currentPlan = null;
-      try { sessionStorage.removeItem('akv2plan262'); } catch (e) {}
+      try { sessionStorage.removeItem('akv2plan263'); } catch (e) {}
     }
     // v2.58: baca SATU field gate AKWeb via dynCall_iii [func, recv, sel].
     // {ok:true, value} kalau panggilan berhasil + angka; {ok:false} kalau
@@ -3847,8 +3847,46 @@ var AKV2_VERSION = '2.62';
           // aim/power manual, preview ngikutin; kalau tidak, throttle
           // signature bikin ini no-op (garis plan tetap yang digambar).
           try { if (S.lastScan && S.lastScan.shot && S.lastGetterRes) livePreview(S.lastGetterRes, S.lastScan.shot); } catch (eLP2) {}
-        } else if (changed && !S.linesFrozen) {
-          refreshOverlay().catch(function () {});
+        } else if (!S.linesFrozen) {
+          // v2.63 GARIS MANUAL REALTIME (autoplay OFF): preview jalan
+          // TIAP TICK, bukan cuma kalau bola berubah — user geser aim /
+          // nge-charge power -> garis + titik berhenti ngikutin tiap
+          // frame, kayak cheto. Sebelum v2.63, cabang ini cuma
+          // `changed && !linesFrozen` (refreshOverlay): pas drag aim/
+          // power, bola diam -> signature tidak berubah -> garis tidak
+          // pernah ke-refresh. Sekarang: rebuild tembakan manual dari
+          // aim live + livePreview di power live tiap tick (baca bola
+          // sudah di-throttle 150 ms di atas). livePreview throttle
+          // signature (aim|power|cue) bikin re-sim cuma jalan kalau
+          // aim/power berubah; drawShot fallback cuma kalau tembakan
+          // manualnya berubah (mSig) — diam tidak bikin redraw sia-sia.
+          // Bola bergerak = skip (overlay dibiarkan, sama seperti
+          // refreshOverlay). Aim tidak terbaca + bola berubah =
+          // fallback refreshOverlay (garis pick solver).
+          try {
+            var _mr = S.lastGetterRes;
+            if (_mr && _mr.balls && _mr.balls.length >= 2) {
+              var _still = true;
+              for (var _mi = 0; _mi < _mr.balls.length; _mi++) {
+                if (Math.hypot(_mr.balls[_mi].vx || 0, _mr.balls[_mi].vy || 0) > 0.05) { _still = false; break; }
+              }
+              if (_still) {
+                var _mShot = null;
+                try { _mShot = manualShotFromAim(_mr); } catch (eMS2) { _mShot = null; }
+                if (_mShot) {
+                  S.lastScan = { res: _mr, shot: _mShot };
+                  var _drew = false;
+                  try { _drew = livePreview(_mr, _mShot); } catch (eLP3) {}
+                  if (!_drew) {
+                    var _mSig = _mShot.angle.toFixed(3) + '|' + _mShot.targetIdx + '|' + _mShot.ghost[0].toFixed(1) + ',' + _mShot.ghost[1].toFixed(1);
+                    if (_mSig !== S.lastManualSig) { S.lastManualSig = _mSig; drawShot(_mShot, _mr); }
+                  }
+                } else if (changed) {
+                  refreshOverlay().catch(function () {});
+                }
+              }
+            }
+          } catch (eMLT) {}
         }
       } catch (e) { try { log('RAF error: ' + e.message); } catch (e2) {} }
     }
