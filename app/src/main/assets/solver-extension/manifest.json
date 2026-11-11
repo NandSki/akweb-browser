@@ -34,9 +34,9 @@
             "run_at": "document_start"
         }
     ],
-    "description": "Injects the 8BP heap solver (Tampermonkey userscript, v2.61) into the game frames. PoC-3: background bridge.js (native messaging JSON ke Kotlin, tanpa .so). Separate from the AKWeb extension.",
+    "description": "Injects the 8BP heap solver (Tampermonkey userscript, v2.62) into the game frames. PoC-3: background bridge.js (native messaging JSON ke Kotlin, tanpa .so). Separate from the AKWeb extension.",
     "manifest_version": 2,
-    "name": "8BP Heap Solver v2.61",
+    "name": "8BP Heap Solver v2.62",
     "permissions": [
         "nativeMessaging",
         "nativeMessagingFromContent",
